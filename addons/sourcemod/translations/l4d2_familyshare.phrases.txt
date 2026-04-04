@@ -1,0 +1,35 @@
+"Phrases"
+{
+	"Tag"
+	{
+		"en"	"[{olive}FamilyShare{default}]"
+	}
+	"KickClient"
+	{
+		"en"	"Shared copies of Left 4 Dead 2 are not allowed on this server."
+	}
+	"SharedCopyDetected"
+	{
+		"en"	"{green}%s{default} ({olive}%s{default}) is using a borrowed copy of L4D2."
+	}
+	"OwnerProfileResolvedLabel"
+	{
+		"en"	"Owner profile ({green}%s{default}):"
+	}
+	"OwnerProfileLabel"
+	{
+		"en"	"Owner profile:"
+	}
+	"OwnerProfileUrl"
+	{
+		"en"	"{olive}%s{default}"
+	}
+	"UnknownOwner"
+	{
+		"en"	"Unknown Owner"
+	}
+	"DisconnectedPlayer"
+	{
+		"en"	"Disconnected Player"
+	}
+}
