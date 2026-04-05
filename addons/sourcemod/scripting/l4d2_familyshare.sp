@@ -446,10 +446,10 @@ bool ParseJsonStringValue(const char[] json, const char[] key, char[] buffer, in
 SteamIDToolsProvider GetReadySteamIDToolsProvider()
 {
 	if (g_cvSteamIDToolsBackend == null || !g_cvSteamIDToolsBackend.BoolValue)
-		return SteamIDToolsProvider_Unknown;
+		return SteamIDToolsProvider_Auto;
 
 	if (!SteamIDTools_IsLibraryAvailable())
-		return SteamIDToolsProvider_Unknown;
+		return SteamIDToolsProvider_Auto;
 
 	if (SteamIDTools_IsProviderReady(SteamIDToolsProvider_SteamWorks))
 		return SteamIDToolsProvider_SteamWorks;
@@ -457,7 +457,7 @@ SteamIDToolsProvider GetReadySteamIDToolsProvider()
 	if (SteamIDTools_IsProviderReady(SteamIDToolsProvider_System2))
 		return SteamIDToolsProvider_System2;
 
-	return SteamIDToolsProvider_Unknown;
+	return SteamIDToolsProvider_Auto;
 }
 
 DataPack CloneFamilySharePackWithOwner(DataPack sourcePack, const char[] ownerSteamId64, const char[] ownerProfileUrl)
@@ -568,7 +568,7 @@ bool StartOwnerSteamId64Resolution(DataPack pack, int ownerAccountId)
 		return false;
 
 	SteamIDToolsProvider provider = GetReadySteamIDToolsProvider();
-	if (provider == SteamIDToolsProvider_Unknown)
+	if (provider == SteamIDToolsProvider_Auto)
 		return false;
 
 	char input[16];
