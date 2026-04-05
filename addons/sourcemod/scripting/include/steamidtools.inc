@@ -52,7 +52,7 @@ public void __pl_steamidtools_SetNTVOptional()
 
 enum SteamIDToolsProvider
 {
-	SteamIDToolsProvider_Unknown = 0,
+	SteamIDToolsProvider_Auto = 0,
 	SteamIDToolsProvider_SteamWorks,
 	SteamIDToolsProvider_System2
 }
