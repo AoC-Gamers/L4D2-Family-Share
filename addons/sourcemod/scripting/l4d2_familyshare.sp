@@ -385,8 +385,7 @@ void AnnounceFamilyShare(const char[] playerName, const char[] borrowerSteamId64
 
 	if (ownerSteamId64[0] != '\0' && ownerProfileUrl[0] != '\0')
 	{
-		CPrintToChatAll("%t %t", "Tag", "OwnerProfileResolvedLabel", ownerName);
-		CPrintToChatAll("%t %t", "Tag", "OwnerProfileUrl", ownerProfileUrl);
+		CPrintToChatAll("%t %t %t", "Tag", "OwnerProfileResolvedLabel", ownerName, "OwnerProfileUrl", ownerProfileUrl);
 	}
 	else
 	{
@@ -397,9 +396,10 @@ void AnnounceFamilyShare(const char[] playerName, const char[] borrowerSteamId64
 		if (AccountIDToSteamID3String(ownerAccountId, ownerSteamId3, sizeof(ownerSteamId3)))
 			BuildProfileURL(ownerSteamId3, ownerFallbackProfileUrl, sizeof(ownerFallbackProfileUrl));
 
-		CPrintToChatAll("%t %t", "Tag", "OwnerProfileLabel");
 		if (ownerFallbackProfileUrl[0] != '\0')
-			CPrintToChatAll("%t %t", "Tag", "OwnerProfileUrl", ownerFallbackProfileUrl);
+			CPrintToChatAll("%t %t %t", "Tag", "OwnerProfileLabel", "OwnerProfileUrl", ownerFallbackProfileUrl);
+		else
+			CPrintToChatAll("%t %t", "Tag", "OwnerProfileLabel");
 	}
 }
 
@@ -527,6 +527,13 @@ void ProcessPendingFamilyShareDetection(DataPack pack, const char[] resolvedOwne
 		char sidParts[3][16];
 		if (ExplodeString(ownerSid2, ":", sidParts, sizeof(sidParts), sizeof(sidParts[])) == 3)
 			ownerAccountId = StringToInt(sidParts[2]) * 2 + StringToInt(sidParts[1]);
+	}
+
+	if (ownerProfileUrl[0] == '\0' && ownerAccountId > 0)
+	{
+		char ownerSteamId3[32];
+		if (AccountIDToSteamID3String(ownerAccountId, ownerSteamId3, sizeof(ownerSteamId3)))
+			BuildProfileURL(ownerSteamId3, ownerProfileUrl, sizeof(ownerProfileUrl));
 	}
 
 	LogFamilyShareDetection(playerName, borrowerAccountId, borrowerSid64, ownerName, ownerSid64, ownerProfileUrl);
