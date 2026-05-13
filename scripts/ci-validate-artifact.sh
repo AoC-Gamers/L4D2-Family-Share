@@ -19,7 +19,10 @@ sm_dir = os.path.join(artifact_dir, "addons", "sourcemod")
 
 expected_files = [
     os.path.join(sm_dir, "plugins", "l4d2_familyshare.smx"),
+    os.path.join(sm_dir, "plugins", "l4d2_familyshare_ban_bridge.smx"),
     os.path.join(sm_dir, "scripting", "l4d2_familyshare.sp"),
+    os.path.join(sm_dir, "scripting", "l4d2_familyshare_ban_bridge.sp"),
+    os.path.join(sm_dir, "scripting", "include", "l4d2_familyshare.inc"),
     os.path.join(sm_dir, "translations", "l4d2_familyshare.phrases.txt"),
     os.path.join(sm_dir, "translations", "es", "l4d2_familyshare.phrases.txt"),
     os.path.join(sm_dir, "configs", "sql-init", "mysql", "l4d2_familyshare.sql"),
@@ -31,8 +34,15 @@ for path in expected_files:
         raise SystemExit(f"Missing artifact file: {path}")
 
 include_dir = os.path.join(sm_dir, "scripting", "include")
-if os.path.exists(include_dir):
-    raise SystemExit(f"Artifact must not include scripting/include: {include_dir}")
+allowed_include_files = {
+    os.path.join(include_dir, "l4d2_familyshare.inc"),
+}
+
+for root, _, files in os.walk(include_dir):
+    for name in files:
+        path = os.path.join(root, name)
+        if path not in allowed_include_files:
+            raise SystemExit(f"Artifact includes unsupported complementary library: {path}")
 
 print("ARTIFACT_VALIDATION_OK")
 PY

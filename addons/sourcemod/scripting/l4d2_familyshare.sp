@@ -25,20 +25,38 @@ ConVar g_cvSqlConfig;
 ConVar g_cvSqlTable;
 ConVar g_cvSteamApiKey;
 ConVar g_cvSteamIDToolsBackend;
+GlobalForward g_fwdFamilyShareDetected;
 bool g_bSqlReady;
 Database g_dbFamilyShare;
 ArrayList g_aPendingFamilyShareSql;
 Handle g_hFamilyShareSqlRetryTimer;
 StringMap g_smPendingOwnerSid64Requests;
+bool g_bClientFamilyShared[MAXPLAYERS + 1];
+bool g_bClientFamilyShareEnforced[MAXPLAYERS + 1];
+int g_iClientFamilyShareBorrowerAccountId[MAXPLAYERS + 1];
+int g_iClientFamilyShareOwnerAccountId[MAXPLAYERS + 1];
 
 public Plugin myinfo =
 {
 	name        = "L4D2 Family Share",
 	author      = "Lechuga",
 	description = "Announce and optionally block players using shared copies of the game.",
-	version     = "1.3.0",
-	url         = ""
+	version     = "1.4.0",
+	url         = "https://github.com/AoC-Gamers/L4D2-Family-Share"
 };
+
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
+{
+	RegPluginLibrary("l4d2_familyshare");
+
+	CreateNative("L4D2FamilyShare_IsClientDetected", Native_IsClientDetected);
+	CreateNative("L4D2FamilyShare_GetClientBorrowerAccountId", Native_GetClientBorrowerAccountId);
+	CreateNative("L4D2FamilyShare_GetClientOwnerAccountId", Native_GetClientOwnerAccountId);
+	CreateNative("L4D2FamilyShare_IsClientEnforced", Native_IsClientEnforced);
+
+	g_fwdFamilyShareDetected = new GlobalForward("L4D2FamilyShare_OnDetected", ET_Ignore, Param_Cell, Param_Cell, Param_Cell, Param_Cell);
+	return APLRes_Success;
+}
 
 public void OnPluginStart()
 {
@@ -73,6 +91,40 @@ public void OnPluginEnd()
 		delete g_dbFamilyShare;
 	if (g_smPendingOwnerSid64Requests != null)
 		delete g_smPendingOwnerSid64Requests;
+}
+
+public void OnClientDisconnect(int client)
+{
+	ResetFamilyShareClientState(client);
+}
+
+void ResetFamilyShareClientState(int client)
+{
+	if (client <= 0 || client > MaxClients)
+		return;
+
+	g_bClientFamilyShared[client] = false;
+	g_bClientFamilyShareEnforced[client] = false;
+	g_iClientFamilyShareBorrowerAccountId[client] = 0;
+	g_iClientFamilyShareOwnerAccountId[client] = 0;
+}
+
+void MarkClientFamilyShareDetected(int client, int borrowerAccountId, int ownerAccountId, bool enforced)
+{
+	if (client <= 0 || client > MaxClients)
+		return;
+
+	g_bClientFamilyShared[client] = true;
+	g_bClientFamilyShareEnforced[client] = enforced;
+	g_iClientFamilyShareBorrowerAccountId[client] = borrowerAccountId;
+	g_iClientFamilyShareOwnerAccountId[client] = ownerAccountId;
+
+	Call_StartForward(g_fwdFamilyShareDetected);
+	Call_PushCell(client);
+	Call_PushCell(borrowerAccountId);
+	Call_PushCell(ownerAccountId);
+	Call_PushCell(enforced ? 1 : 0);
+	Call_Finish();
 }
 
 void ConnectFamilyShareDatabase()
@@ -697,6 +749,7 @@ public void SteamWorks_OnValidateClient(int ownerauthid, int authid)
 
 	ownerSteamId64[0] = '\0';
 	ownerProfileUrl[0] = '\0';
+	MarkClientFamilyShareDetected(client, authid, ownerauthid, g_cvEnforce.BoolValue);
 
 	DataPack pack = new DataPack();
 	pack.WriteString(playerName);
@@ -719,4 +772,34 @@ public void SteamWorks_OnValidateClient(int ownerauthid, int authid)
 
 	Format(kickMessage, sizeof(kickMessage), "%T", "KickClient", client);
 	KickClient(client, kickMessage);
+}
+
+int Native_IsClientDetected(Handle plugin, int numParams)
+{
+	int client = GetNativeCell(1);
+	return IsValidClientIndex(client) && g_bClientFamilyShared[client];
+}
+
+int Native_GetClientBorrowerAccountId(Handle plugin, int numParams)
+{
+	int client = GetNativeCell(1);
+	if (!IsValidClientIndex(client) || !g_bClientFamilyShared[client])
+		return 0;
+
+	return g_iClientFamilyShareBorrowerAccountId[client];
+}
+
+int Native_GetClientOwnerAccountId(Handle plugin, int numParams)
+{
+	int client = GetNativeCell(1);
+	if (!IsValidClientIndex(client) || !g_bClientFamilyShared[client])
+		return 0;
+
+	return g_iClientFamilyShareOwnerAccountId[client];
+}
+
+int Native_IsClientEnforced(Handle plugin, int numParams)
+{
+	int client = GetNativeCell(1);
+	return IsValidClientIndex(client) && g_bClientFamilyShared[client] && g_bClientFamilyShareEnforced[client];
 }
