@@ -22,11 +22,12 @@ LOCAL_INCLUDE_DIR="$ROOT_DIR/addons/sourcemod/scripting/include"
 PACKAGE_SM_DIR="$ARTIFACT_DIR/addons/sourcemod"
 PACKAGE_PLUGIN_DIR="$PACKAGE_SM_DIR/plugins"
 PACKAGE_SCRIPTING_DIR="$PACKAGE_SM_DIR/scripting"
+PACKAGE_INCLUDE_DIR="$PACKAGE_SCRIPTING_DIR/include"
 PACKAGE_TRANSLATIONS_DIR="$PACKAGE_SM_DIR/translations"
 PACKAGE_SQL_DIR="$PACKAGE_SM_DIR/configs/sql-init/mysql"
 COMPILE_LOG="$ARTIFACT_DIR/compile.log"
 
-mkdir -p "$PACKAGE_PLUGIN_DIR" "$PACKAGE_SCRIPTING_DIR" "$PACKAGE_TRANSLATIONS_DIR" "$PACKAGE_SQL_DIR"
+mkdir -p "$PACKAGE_PLUGIN_DIR" "$PACKAGE_SCRIPTING_DIR" "$PACKAGE_INCLUDE_DIR" "$PACKAGE_TRANSLATIONS_DIR" "$PACKAGE_SQL_DIR"
 : > "$COMPILE_LOG"
 
 echo "Compiling l4d2_familyshare.sp..."
@@ -42,7 +43,22 @@ if [[ ! -f "$PACKAGE_PLUGIN_DIR/l4d2_familyshare.smx" ]]; then
   exit 1
 fi
 
+echo "Compiling l4d2_familyshare_ban_bridge.sp..."
+"$SPCOMP_BIN" \
+  "$ROOT_DIR/addons/sourcemod/scripting/l4d2_familyshare_ban_bridge.sp" \
+  -i"$LOCAL_INCLUDE_DIR" \
+  -i"$SOURCEMOD_INCLUDE_DIR" \
+  -o"$PACKAGE_PLUGIN_DIR/l4d2_familyshare_ban_bridge.smx" \
+  2>&1 | tee -a "$COMPILE_LOG"
+
+if [[ ! -f "$PACKAGE_PLUGIN_DIR/l4d2_familyshare_ban_bridge.smx" ]]; then
+  echo "Compiled ban bridge plugin was not generated." >&2
+  exit 1
+fi
+
 cp "$ROOT_DIR/addons/sourcemod/scripting/l4d2_familyshare.sp" "$PACKAGE_SCRIPTING_DIR/"
+cp "$ROOT_DIR/addons/sourcemod/scripting/l4d2_familyshare_ban_bridge.sp" "$PACKAGE_SCRIPTING_DIR/"
+cp "$ROOT_DIR/addons/sourcemod/scripting/include/l4d2_familyshare.inc" "$PACKAGE_INCLUDE_DIR/"
 cp "$ROOT_DIR/addons/sourcemod/translations/l4d2_familyshare.phrases.txt" "$PACKAGE_TRANSLATIONS_DIR/"
 mkdir -p "$PACKAGE_TRANSLATIONS_DIR/es"
 cp "$ROOT_DIR/addons/sourcemod/translations/es/l4d2_familyshare.phrases.txt" "$PACKAGE_TRANSLATIONS_DIR/es/"
