@@ -5,11 +5,6 @@ on:
     tags:
       - v*
   workflow_dispatch:
-    inputs:
-      sourcemod_version:
-        description: SourceMod version to download
-        required: false
-        default: "1.12"
 
 concurrency:
   group: release-${{ github.ref }}
@@ -19,8 +14,7 @@ permissions:
   contents: read
 
 env:
-  SOURCEMOD_VERSION: ${{ github.event.inputs.sourcemod_version || '1.12' }}
-  SOURCEMOD_ARCHIVE_URL: https://www.sourcemod.net/latest.php?os=linux&version=${{ github.event.inputs.sourcemod_version || '1.12' }}
+  SOURCEMOD_VERSION: "1.12"
 
 jobs:
   prepare-release:
@@ -52,12 +46,49 @@ jobs:
             exit 1
           fi
 
-  create-release:
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: prepare-release
+  deps-smx:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    outputs:
+      cache-key: ${{ steps.cache-key.outputs.key }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes python3 make
+
+      - name: Resolve dependency cache key
+        id: cache-key
+        shell: bash
+        run: |
+          echo "key=smx-deps-${{ runner.os }}-${{ hashFiles('scripts/fetch-sourcemod.py', 'scripts/build-local.py', 'scripts/stage-artifact.py', 'scripts/package-release.py', 'plugin-package-map.json', 'Makefile') }}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore dependency cache
+        id: deps-cache-restore
+        uses: actions/cache/restore@v5
+        with:
+          path: deps
+          key: ${{ steps.cache-key.outputs.key }}
+
+      - name: Fetch SourceMod dependencies
+        if: steps.deps-cache-restore.outputs.cache-hit != 'true'
+        run: make deps-smx PYTHON=python3 SOURCEMOD_VERSION="${SOURCEMOD_VERSION}" SMX_PLATFORM=linux
+
+      - name: Save dependency cache
+        if: steps.deps-cache-restore.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: deps
+          key: ${{ steps.cache-key.outputs.key }}
+
+  build-smx:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare-release
+      - deps-smx
 
     steps:
       - name: Check out repository
@@ -65,30 +96,76 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install SourceMod build dependencies
+      - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes curl tar python3
+          sudo apt-get install --yes python3 make
 
-      - name: Show SourceMod version
+      - name: Restore dependency cache
+        uses: actions/cache/restore@v5
+        with:
+          path: deps
+          key: ${{ needs.deps-smx.outputs.cache-key }}
+          fail-on-cache-miss: true
+
+      - name: Build SMX
+        run: make build-smx PYTHON=python3 SPCOMP="deps/sourcemod-linux/addons/sourcemod/scripting/spcomp"
+
+      - name: Upload SMX build tree
+        uses: actions/upload-artifact@v6
+        with:
+          name: smx-build
+          path: .build/smx
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload compile log
+        uses: actions/upload-artifact@v6
+        with:
+          name: smx-compile-log
+          path: deps/build-smx-compile.log
+          if-no-files-found: error
+          retention-days: 1
+
+  release:
+    runs-on: ubuntu-latest
+    needs:
+      - prepare-release
+      - build-smx
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install build dependencies
         run: |
-          echo "SOURCEMOD_VERSION=${SOURCEMOD_VERSION}"
-          echo "SOURCEMOD_ARCHIVE_URL=${SOURCEMOD_ARCHIVE_URL}"
+          sudo apt-get update
+          sudo apt-get install --yes python3 make
 
-      - name: Verify GitHub CLI
-        run: gh --version
+      - name: Download SMX build tree
+        uses: actions/download-artifact@v8
+        with:
+          name: smx-build
+          path: .build/smx
 
-      - name: Build SourceMod artifact
-        run: bash ./scripts/ci-build-sourcemod.sh
+      - name: Download compile log
+        uses: actions/download-artifact@v8
+        with:
+          name: smx-compile-log
+          path: deps
 
-      - name: Validate SourceMod artifact
-        run: bash ./scripts/ci-validate-artifact.sh
+      - name: Package SMX tree
+        run: make package-smx PYTHON=python3
+
+      - name: Stage artifact
+        run: |
+          python3 ./scripts/stage-artifact.py . ./.build/package-smx ./deps/build-smx-compile.log
+          bash ./scripts/ci-validate-artifact.sh
 
       - name: Package release assets
-        env:
-          RELEASE_BASENAME: ${{ needs.prepare-release.outputs.basename }}
-          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
-        run: bash ./scripts/ci-package-release-assets.sh
+        run: make release PYTHON=python3 RELEASE_BASENAME="${{ needs.prepare-release.outputs.basename }}"
 
       - name: Upload release zip artifact
         uses: actions/upload-artifact@v6
