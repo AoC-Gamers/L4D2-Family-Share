@@ -2,6 +2,7 @@
 #pragma newdecls required
 
 #include <colors>
+#include <keyvalues>
 #include <sourcemod>
 #include <steamworks>
 
@@ -11,6 +12,9 @@
 
 #define FAMILYSHARE_TAG "[{olive}FamilyShare{default}]"
 #define FAMILYSHARE_LOG "logs/FamilyShare.log"
+#define FAMILYSHARE_SQL_PENDING_KV "data/l4d2_familyshare_pending.kv"
+#define FAMILYSHARE_SQL_RETRY_DELAY 30.0
+#define FAMILYSHARE_SQL_MAX_CONNECT_ATTEMPTS 2
 
 enum FamilyShareSqlOperation
 {
@@ -31,6 +35,8 @@ Database g_dbFamilyShare;
 ArrayList g_aPendingFamilyShareSql;
 Handle g_hFamilyShareSqlRetryTimer;
 StringMap g_smPendingOwnerSid64Requests;
+int g_iFamilyShareSqlConnectAttempts;
+bool g_bFamilyShareSqlRetriesExhausted;
 bool g_bClientFamilyShared[MAXPLAYERS + 1];
 bool g_bClientFamilyShareEnforced[MAXPLAYERS + 1];
 int g_iClientFamilyShareBorrowerAccountId[MAXPLAYERS + 1];
@@ -79,6 +85,8 @@ public void OnPluginStart()
 
 public void OnConfigsExecuted()
 {
+	ResetFamilyShareSqlReconnectState();
+	LoadPersistedFamilyShareSql();
 	ConnectFamilyShareDatabase();
 }
 
@@ -160,18 +168,31 @@ public void OnFamilyShareDatabaseConnected(Database db, const char[] error, any 
 	if (db == null)
 	{
 		LogError("[FamilyShare] SQL connection failed: %s", error);
-		ScheduleFamilyShareSqlRetry();
+		g_iFamilyShareSqlConnectAttempts++;
+		if (g_iFamilyShareSqlConnectAttempts < FAMILYSHARE_SQL_MAX_CONNECT_ATTEMPTS)
+		{
+			ScheduleFamilyShareSqlRetry();
+		}
+		else
+		{
+			g_bFamilyShareSqlRetriesExhausted = true;
+			LogError("[FamilyShare] SQL retries exhausted after %d attempts, persisting pending events to local KV.", g_iFamilyShareSqlConnectAttempts);
+			PersistPendingFamilyShareSqlQueue();
+		}
 		return;
 	}
 
 	g_dbFamilyShare = db;
 	g_bSqlReady = true;
+	ResetFamilyShareSqlReconnectState();
 	LogFamilyShareSqlDebug("connected pending=%d", g_aPendingFamilyShareSql != null ? g_aPendingFamilyShareSql.Length : 0);
 	FlushPendingFamilyShareSql();
 }
 
 public void OnFamilyShareSqlSettingsChanged(ConVar convar, const char[] oldValue, const char[] newValue)
 {
+	ResetFamilyShareSqlReconnectState();
+	LoadPersistedFamilyShareSql();
 	ConnectFamilyShareDatabase();
 }
 
@@ -180,17 +201,22 @@ void ScheduleFamilyShareSqlRetry()
 	if (g_hFamilyShareSqlRetryTimer != null || !g_cvSqlEnable.BoolValue)
 		return;
 
-	LogFamilyShareSqlDebug("reconnect scheduled delay=30");
-	g_hFamilyShareSqlRetryTimer = CreateTimer(30.0, Timer_RetryFamilyShareDatabase, _, TIMER_FLAG_NO_MAPCHANGE);
+	LogFamilyShareSqlDebug("reconnect scheduled delay=%d attempt=%d", RoundToFloor(FAMILYSHARE_SQL_RETRY_DELAY), g_iFamilyShareSqlConnectAttempts + 1);
+	g_hFamilyShareSqlRetryTimer = CreateTimer(FAMILYSHARE_SQL_RETRY_DELAY, Timer_RetryFamilyShareDatabase, _, TIMER_FLAG_NO_MAPCHANGE);
 }
 
 void CancelFamilyShareSqlRetry()
 {
-	if (g_hFamilyShareSqlRetryTimer == null)
+	Handle timer = g_hFamilyShareSqlRetryTimer;
+	g_hFamilyShareSqlRetryTimer = null;
+
+	if (timer == null)
 		return;
 
-	delete g_hFamilyShareSqlRetryTimer;
-	g_hFamilyShareSqlRetryTimer = null;
+	// TIMER_FLAG_NO_MAPCHANGE can auto-destroy the timer on map change,
+	// leaving a stale reference behind. Guard before killing it manually.
+	if (IsValidHandle(timer))
+		KillTimer(timer);
 }
 
 public Action Timer_RetryFamilyShareDatabase(Handle timer)
@@ -199,6 +225,12 @@ public Action Timer_RetryFamilyShareDatabase(Handle timer)
 	LogFamilyShareSqlDebug("reconnect retry");
 	ConnectFamilyShareDatabase();
 	return Plugin_Stop;
+}
+
+void ResetFamilyShareSqlReconnectState()
+{
+	g_iFamilyShareSqlConnectAttempts = 0;
+	g_bFamilyShareSqlRetriesExhausted = false;
 }
 
 void LogFamilyShareSqlDebug(const char[] message, any ...)
@@ -252,6 +284,11 @@ void GetOwnerDisplayName(int ownerAccountId, char[] buffer, int maxlen)
 void BuildFamilyShareLogPath(char[] buffer, int maxlen)
 {
 	BuildPath(Path_SM, buffer, maxlen, FAMILYSHARE_LOG);
+}
+
+void BuildFamilySharePendingKvPath(char[] buffer, int maxlen)
+{
+	BuildPath(Path_SM, buffer, maxlen, FAMILYSHARE_SQL_PENDING_KV);
 }
 
 bool GetClientSteamId64(int client, char[] buffer, int maxlen)
@@ -312,8 +349,16 @@ void InsertFamilyShareSqlEvent(const char[] playerName, int borrowerAccountId, c
 
 	if (!g_bSqlReady || g_dbFamilyShare == null)
 	{
-		LogFamilyShareSqlDebug("queue insert borrower=%d owner_sid64=%s", borrowerAccountId, ownerSid64);
-		QueuePendingFamilyShareInsert(playerName, borrowerAccountId, borrowerSid64, ownerName, ownerSid64, enforced);
+		if (g_bFamilyShareSqlRetriesExhausted)
+		{
+			LogFamilyShareSqlDebug("persist insert borrower=%d owner_sid64=%s", borrowerAccountId, ownerSid64);
+			PersistFamilyShareSqlEvent(playerName, borrowerAccountId, borrowerSid64, ownerName, ownerSid64, enforced);
+		}
+		else
+		{
+			LogFamilyShareSqlDebug("queue insert borrower=%d owner_sid64=%s", borrowerAccountId, ownerSid64);
+			QueuePendingFamilyShareInsert(playerName, borrowerAccountId, borrowerSid64, ownerName, ownerSid64, enforced);
+		}
 		return;
 	}
 
@@ -353,26 +398,26 @@ void InsertFamilyShareSqlEvent(const char[] playerName, int borrowerAccountId, c
 		enforced ? 1 : 0);
 
 	LogFamilyShareSqlDebug("insert borrower=%d owner_sid64=%s", borrowerAccountId, ownerSid64);
-	g_dbFamilyShare.Query(OnFamilyShareSqlQueryFinished, query);
+	g_dbFamilyShare.Query(OnFamilyShareSqlQueryFinished, query, CreateFamilyShareSqlEventPack(playerName, borrowerAccountId, borrowerSid64, ownerName, ownerSid64, enforced));
 }
 
 public void OnFamilyShareSqlQueryFinished(Database db, DBResultSet results, const char[] error, any data)
 {
+	DataPack pack = view_as<DataPack>(data);
+
 	if (error[0] != '\0')
+	{
 		LogError("[FamilyShare] SQL query failed: %s", error);
+		PersistFamilyShareSqlEventPack(pack);
+	}
+
+	if (pack != null)
+		delete pack;
 }
 
 void QueuePendingFamilyShareInsert(const char[] playerName, int borrowerAccountId, const char[] borrowerSid64, const char[] ownerName, const char[] ownerSid64, bool enforced)
 {
-	DataPack pack = new DataPack();
-	pack.WriteCell(FamilyShareSqlOperation_Insert);
-	pack.WriteString(playerName);
-	pack.WriteCell(borrowerAccountId);
-	pack.WriteString(borrowerSid64);
-	pack.WriteString(ownerName);
-	pack.WriteString(ownerSid64);
-	pack.WriteCell(enforced ? 1 : 0);
-	g_aPendingFamilyShareSql.Push(pack);
+	g_aPendingFamilyShareSql.Push(CreateFamilyShareSqlEventPack(playerName, borrowerAccountId, borrowerSid64, ownerName, ownerSid64, enforced));
 }
 
 void FlushPendingFamilyShareSql()
@@ -426,6 +471,172 @@ void ClearPendingFamilyShareSql()
 
 	delete g_aPendingFamilyShareSql;
 	g_aPendingFamilyShareSql = null;
+}
+
+DataPack CreateFamilyShareSqlEventPack(const char[] playerName, int borrowerAccountId, const char[] borrowerSid64, const char[] ownerName, const char[] ownerSid64, bool enforced)
+{
+	DataPack pack = new DataPack();
+	pack.WriteCell(FamilyShareSqlOperation_Insert);
+	pack.WriteString(playerName);
+	pack.WriteCell(borrowerAccountId);
+	pack.WriteString(borrowerSid64);
+	pack.WriteString(ownerName);
+	pack.WriteString(ownerSid64);
+	pack.WriteCell(enforced ? 1 : 0);
+	return pack;
+}
+
+bool ReadFamilyShareSqlEventPack(DataPack pack, char[] playerName, int playerNameLen, int &borrowerAccountId, char[] borrowerSid64, int borrowerSid64Len, char[] ownerName, int ownerNameLen, char[] ownerSid64, int ownerSid64Len, bool &enforced)
+{
+	if (pack == null)
+		return false;
+
+	pack.Reset();
+	if (pack.ReadCell() != FamilyShareSqlOperation_Insert)
+		return false;
+
+	pack.ReadString(playerName, playerNameLen);
+	borrowerAccountId = pack.ReadCell();
+	pack.ReadString(borrowerSid64, borrowerSid64Len);
+	pack.ReadString(ownerName, ownerNameLen);
+	pack.ReadString(ownerSid64, ownerSid64Len);
+	enforced = pack.ReadCell() == 1;
+	return true;
+}
+
+void WriteFamilyShareSqlEventToKv(KeyValues kv, const char[] playerName, int borrowerAccountId, const char[] borrowerSid64, const char[] ownerName, const char[] ownerSid64, bool enforced)
+{
+	int nextId = kv.GetNum("next_id", 1);
+	kv.SetNum("next_id", nextId + 1);
+
+	if (!kv.JumpToKey("events", true))
+		return;
+
+	char section[32];
+	Format(section, sizeof(section), "event_%d", nextId);
+	if (!kv.JumpToKey(section, true))
+	{
+		kv.GoBack();
+		return;
+	}
+
+	kv.SetString("borrower_name", playerName);
+	kv.SetNum("borrower_accountid", borrowerAccountId);
+	kv.SetString("borrower_steamid64", borrowerSid64);
+	kv.SetString("owner_name", ownerName);
+	kv.SetString("owner_steamid64", ownerSid64);
+	kv.SetNum("enforced", enforced ? 1 : 0);
+	kv.GoBack();
+	kv.GoBack();
+}
+
+void PersistFamilyShareSqlEvent(const char[] playerName, int borrowerAccountId, const char[] borrowerSid64, const char[] ownerName, const char[] ownerSid64, bool enforced)
+{
+	char path[PLATFORM_MAX_PATH];
+	BuildFamilySharePendingKvPath(path, sizeof(path));
+
+	KeyValues kv = new KeyValues("FamilySharePending");
+	if (FileExists(path) && !kv.ImportFromFile(path))
+		LogError("[FamilyShare] Failed to import pending KV file before append: %s", path);
+
+	WriteFamilyShareSqlEventToKv(kv, playerName, borrowerAccountId, borrowerSid64, ownerName, ownerSid64, enforced);
+	if (!kv.ExportToFile(path))
+		LogError("[FamilyShare] Failed to persist pending KV file: %s", path);
+
+	delete kv;
+}
+
+void PersistFamilyShareSqlEventPack(DataPack pack)
+{
+	char playerName[MAX_NAME_LENGTH];
+	char borrowerSid64[32];
+	char ownerName[MAX_NAME_LENGTH];
+	char ownerSid64[32];
+	int borrowerAccountId = 0;
+	bool enforced = false;
+
+	if (!ReadFamilyShareSqlEventPack(pack, playerName, sizeof(playerName), borrowerAccountId, borrowerSid64, sizeof(borrowerSid64), ownerName, sizeof(ownerName), ownerSid64, sizeof(ownerSid64), enforced))
+		return;
+
+	PersistFamilyShareSqlEvent(playerName, borrowerAccountId, borrowerSid64, ownerName, ownerSid64, enforced);
+}
+
+void PersistPendingFamilyShareSqlQueue()
+{
+	if (g_aPendingFamilyShareSql == null || g_aPendingFamilyShareSql.Length == 0)
+		return;
+
+	char path[PLATFORM_MAX_PATH];
+	BuildFamilySharePendingKvPath(path, sizeof(path));
+	DeleteFile(path);
+
+	KeyValues kv = new KeyValues("FamilySharePending");
+	int count = g_aPendingFamilyShareSql.Length;
+	for (int i = 0; i < count; i++)
+	{
+		DataPack pack = view_as<DataPack>(g_aPendingFamilyShareSql.Get(i));
+		char playerName[MAX_NAME_LENGTH];
+		char borrowerSid64[32];
+		char ownerName[MAX_NAME_LENGTH];
+		char ownerSid64[32];
+		int borrowerAccountId = 0;
+		bool enforced = false;
+
+		if (!ReadFamilyShareSqlEventPack(pack, playerName, sizeof(playerName), borrowerAccountId, borrowerSid64, sizeof(borrowerSid64), ownerName, sizeof(ownerName), ownerSid64, sizeof(ownerSid64), enforced))
+			continue;
+
+		WriteFamilyShareSqlEventToKv(kv, playerName, borrowerAccountId, borrowerSid64, ownerName, ownerSid64, enforced);
+	}
+
+	if (!kv.ExportToFile(path))
+		LogError("[FamilyShare] Failed to persist pending KV file: %s", path);
+
+	delete kv;
+	ClearPendingFamilyShareSql();
+	g_aPendingFamilyShareSql = new ArrayList();
+}
+
+void LoadPersistedFamilyShareSql()
+{
+	char path[PLATFORM_MAX_PATH];
+	BuildFamilySharePendingKvPath(path, sizeof(path));
+	if (!FileExists(path))
+		return;
+
+	KeyValues kv = new KeyValues("FamilySharePending");
+	if (!kv.ImportFromFile(path))
+	{
+		LogError("[FamilyShare] Failed to import pending KV file: %s", path);
+		delete kv;
+		return;
+	}
+
+	if (kv.JumpToKey("events") && kv.GotoFirstSubKey())
+	{
+		do
+		{
+			char playerName[MAX_NAME_LENGTH];
+			char borrowerSid64[32];
+			char ownerName[MAX_NAME_LENGTH];
+			char ownerSid64[32];
+
+			kv.GetString("borrower_name", playerName, sizeof(playerName));
+			int borrowerAccountId = kv.GetNum("borrower_accountid", 0);
+			kv.GetString("borrower_steamid64", borrowerSid64, sizeof(borrowerSid64));
+			kv.GetString("owner_name", ownerName, sizeof(ownerName), "Unknown Owner");
+			kv.GetString("owner_steamid64", ownerSid64, sizeof(ownerSid64));
+			bool enforced = kv.GetNum("enforced", 0) == 1;
+
+			if (borrowerAccountId > 0)
+				QueuePendingFamilyShareInsert(playerName, borrowerAccountId, borrowerSid64, ownerName, ownerSid64, enforced);
+		}
+		while (kv.GotoNextKey());
+	}
+
+	delete kv;
+
+	if (!DeleteFile(path))
+		LogError("[FamilyShare] Failed to remove pending KV file after load: %s", path);
 }
 
 void AnnounceFamilyShare(const char[] playerName, const char[] borrowerSteamId64, const char[] ownerName, int ownerAccountId, const char[] ownerSteamId64, const char[] ownerProfileUrl)
