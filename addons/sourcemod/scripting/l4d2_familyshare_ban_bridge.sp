@@ -2,13 +2,35 @@
 #pragma newdecls required
 
 #include <sourcemod>
+
+#undef REQUIRE_PLUGIN
 #include <l4d2_familyshare>
 #include <bansystem_access>
+#define REQUIRE_PLUGIN
+
+#define LIBRARY_L4D2_FAMILYSHARE "l4d2_familyshare"
+#define LIBRARY_BANSYSTEM_ACCESS "bansystem_access"
 
 ConVar g_cvEnabled;
 ConVar g_cvBanReason;
 ConVar g_cvDebug;
 StringMap g_smPendingChecks;
+
+enum struct BanBridgeRuntimeState
+{
+	bool late;
+	bool hasFamilyShare;
+	bool hasBanSystemAccess;
+
+	void Reset()
+	{
+		this.late = false;
+		this.hasFamilyShare = false;
+		this.hasBanSystemAccess = false;
+	}
+}
+
+BanBridgeRuntimeState g_Runtime;
 
 public Plugin myinfo =
 {
@@ -19,6 +41,13 @@ public Plugin myinfo =
 	url = "https://github.com/AoC-Gamers/L4D2-Family-Share"
 };
 
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int errorMax)
+{
+	g_Runtime.Reset();
+	g_Runtime.late = late;
+	return APLRes_Success;
+}
+
 public void OnPluginStart()
 {
 	g_cvEnabled = CreateConVar("l4d2_familyshare_ban_enabled", "1", "Enable FamilyShare to BanSystem access mirroring.", FCVAR_NONE, true, 0.0, true, 1.0);
@@ -28,11 +57,39 @@ public void OnPluginStart()
 
 	AutoExecConfig(true, "l4d2_familyshare_ban");
 
+	if (!g_Runtime.late)
+	{
+		return;
+	}
+
+	g_Runtime.hasFamilyShare = LibraryExists(LIBRARY_L4D2_FAMILYSHARE);
+	g_Runtime.hasBanSystemAccess = LibraryExists(LIBRARY_BANSYSTEM_ACCESS);
+}
+
+public void OnLibraryAdded(const char[] name)
+{
+	if (StrEqual(name, LIBRARY_L4D2_FAMILYSHARE))
+		g_Runtime.hasFamilyShare = true;
+	else if (StrEqual(name, LIBRARY_BANSYSTEM_ACCESS))
+		g_Runtime.hasBanSystemAccess = true;
+}
+
+public void OnLibraryRemoved(const char[] name)
+{
+	if (StrEqual(name, LIBRARY_L4D2_FAMILYSHARE))
+	{
+		g_Runtime.hasFamilyShare = false;
+	}
+	else if (StrEqual(name, LIBRARY_BANSYSTEM_ACCESS))
+	{
+		g_Runtime.hasBanSystemAccess = false;
+		ClearPendingChecks();
+	}
 }
 
 public void OnPluginEnd()
 {
-	ClearPendingChecks();
+	//ClearPendingChecks();
 
 	if (g_smPendingChecks != null)
 		delete g_smPendingChecks;
@@ -40,7 +97,7 @@ public void OnPluginEnd()
 
 public void L4D2FamilyShare_OnDetected(int client, int borrowerAccountId, int ownerAccountId, bool enforced)
 {
-	if (!g_cvEnabled.BoolValue)
+	if (!g_cvEnabled.BoolValue || !g_Runtime.hasFamilyShare || !g_Runtime.hasBanSystemAccess)
 		return;
 
 	if (borrowerAccountId <= 0 || ownerAccountId <= 0)
@@ -73,7 +130,7 @@ public void L4D2FamilyShare_OnDetected(int client, int borrowerAccountId, int ow
 
 public void BSAccess_OnAccountIdBanInfo(int requestId, int accountId, bool success, bool banned, int banLength)
 {
-	if (g_smPendingChecks == null)
+	if (g_smPendingChecks == null || !g_Runtime.hasBanSystemAccess)
 		return;
 
 	char key[16];

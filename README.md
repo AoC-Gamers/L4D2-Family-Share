@@ -27,6 +27,21 @@ Rol de cada componente:
 - `SteamWorks` entrega la señal principal de Family Share y el identificador base del owner.
 - `SteamIDTools` resuelve en línea la conversión del identificador del owner a un formato más útil para perfiles, enlaces y enriquecimiento posterior.
 
+## Build local
+
+El repositorio usa el mismo flujo base en desarrollo local y en CI.
+
+Comandos:
+
+- `make deps-smx`
+- `make build-smx`
+- `make package-smx`
+- `make release`
+
+El manifiesto [plugin-package-map.json](plugin-package-map.json) define qué se compila y qué entra al artifact final.
+
+Más detalle del sistema de build en [docs/BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md).
+
 ## Enriquecimiento del owner
 
 Cuando la integración auxiliar está disponible, el flujo puede:

@@ -1,0 +1,35 @@
+{
+  "build": {
+    "plugins": {
+      "root": [
+        "l4d2_familyshare",
+        "l4d2_familyshare_ban_bridge"
+      ]
+    }
+  },
+  "artifact": {
+    "addons": {
+      "sourcemod": {
+        "scripting": {
+          "files": [
+            "l4d2_familyshare.sp",
+            "l4d2_familyshare_ban_bridge.sp"
+          ],
+          "include": {
+            "files": [
+              "l4d2_familyshare.inc"
+            ]
+          }
+        },
+        "translations": {
+          "all": true
+        },
+        "configs": {
+          "dirs": [
+            "sql-init"
+          ]
+        }
+      }
+    }
+  }
+}
