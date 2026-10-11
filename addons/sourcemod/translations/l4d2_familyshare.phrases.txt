@@ -10,11 +10,13 @@
 	}
 	"SharedCopyDetected"
 	{
-		"en"	"{green}%s{default} ({olive}%s{default}) is using a borrowed copy of L4D2."
+		"#format"	"{1:s},{2:s}"
+		"en"	"{green}{1}{default} ({olive}{2}{default}) is using a borrowed copy of L4D2."
 	}
 	"OwnerProfileResolvedLabel"
 	{
-		"en"	"Owner profile ({green}%s{default}):"
+		"#format"	"{1:s}"
+		"en"	"Owner profile ({green}{1}{default}):"
 	}
 	"OwnerProfileLabel"
 	{
@@ -22,7 +24,8 @@
 	}
 	"OwnerProfileUrl"
 	{
-		"en"	"{olive}%s{default}"
+		"#format"	"{1:s}"
+		"en"	"{olive}{1}{default}"
 	}
 	"UnknownOwner"
 	{
@@ -31,5 +34,23 @@
 	"DisconnectedPlayer"
 	{
 		"en"	"Disconnected Player"
+	}
+	"AllowAccountUsage"
+	{
+		"en"	"Use sm_familyshare_allow or sm_familyshare_disallow with one numeric borrower AccountID."
+	}
+	"AllowAccountSaveFailed"
+	{
+		"en"	"Could not load or save the allowed accounts file. Check the SourceMod error log."
+	}
+	"AllowAccountUpdated"
+	{
+		"#format"	"{1:s},{2:d}"
+		"en"	"Borrower AccountID {1}: allowed={2}."
+	}
+	"AllowAccountsReloaded"
+	{
+		"#format"	"{1:d}"
+		"en"	"Reloaded {1} allowed borrower accounts."
 	}
 }

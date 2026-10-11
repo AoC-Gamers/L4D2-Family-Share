@@ -1,76 +1,58 @@
 # L4D2-Family-Share
 
-Plugin de SourceMod para Left 4 Dead 2 orientado a detectar jugadores que están usando una copia prestada del juego mediante Steam Family Sharing.
+Suite SourceMod para detectar Steam Family Sharing en Left 4 Dead 2.
 
-## Objetivo
+## Componentes
 
-El objetivo del plugin es dar visibilidad y control sobre este tipo de acceso en servidores dedicados. Según cómo se configure en cada servidor, el flujo puede:
-- anunciar la detección al resto de los jugadores
-- registrar el evento para auditoría
-- aplicar enforcement sobre el jugador detectado
+| Plugin | Responsabilidad |
+|---|---|
+| `l4d2_familyshare_core` | Señal de SteamWorks, estado de la conexión, AccountIDs y resolución opcional de perfiles. |
+| `l4d2_familyshare_manager` | Cuentas permitidas, excepciones, anuncios, expulsiones e historial; SQL es un módulo interno. |
 
-## Flujo general
+El core funciona por sí solo. Instalar manager cuando se necesite política o
+historial. La detección entrega `client`, `borrowerAccountId` y `ownerAccountId`;
+AccountID identifica la cuenta aunque se desconecte. El core no conserva
+historial ni decide expulsiones.
 
-1. El servidor detecta que un jugador está usando una copia prestada.
-2. Se identifica al jugador que está conectado y al owner asociado a esa licencia compartida.
-3. El plugin construye un evento de detección con los datos disponibles en ese momento.
-4. Si existe integración con servicios auxiliares, se enriquece el evento con información adicional del owner.
-5. Finalmente, el evento puede anunciarse, registrarse y/o usarse para enforcement.
+Una excepción permite **únicamente el AccountID del borrower**. Permitir al owner
+no permite a otras cuentas que usen su licencia. Los permitidos siguen generando
+detecciones e historial, pero manager no los expulsa por Family Sharing.
 
-## Integración con SteamWorks y SteamIDTools
+## Dependencias
 
-Este plugin está pensado para usarse con estas implementaciones:
-- `SteamWorks`: https://github.com/AoC-Gamers/SteamWorks
-- `SteamIDTools`: https://github.com/AoC-Gamers/SteamIDTools
+- [SteamWorks](https://github.com/AoC-Gamers/SteamWorks): extensión requerida para la validación de licencias y HTTP opcional de perfiles.
+- [SteamIDTools](https://github.com/AoC-Gamers/SteamIDTools): plugin opcional para enriquecimiento de identidad.
 
-Rol de cada componente:
-- `SteamWorks` entrega la señal principal de Family Share y el identificador base del owner.
-- `SteamIDTools` resuelve en línea la conversión del identificador del owner a un formato más útil para perfiles, enlaces y enriquecimiento posterior.
+SteamID64 y el enlace de perfil tienen conversión local como fallback. Una clave
+Steam Web API permite consultar el nombre del owner; su ausencia o un fallo de
+red no impiden detectar ni aplicar la política.
+
+## Configuración y API
+
+- [Core y contratos públicos](docs/README_CORE.md).
+- [Manager, permitidos e historial](docs/README_MANAGER.md).
+- [Migración desde 1.4](docs/MIGRATION.md).
+- [Sistema de build](docs/BUILD_SYSTEM.md).
+
+El antiguo `l4d2_familyshare_ban_bridge` y la API combinada se eliminan. Las
+integraciones externas consumen la detección y los perfiles desde el core; las
+consultas de política pertenecen a manager. Los consumidores antiguos requieren
+la migración descrita en la guía.
 
 ## Build local
 
-El repositorio usa el mismo flujo base en desarrollo local y en CI.
+```sh
+make deps-smx
+make build-smx
+make package-smx
+make release
+```
 
-Comandos:
-
-- `make deps-smx`
-- `make build-smx`
-- `make package-smx`
-- `make release`
-
-El manifiesto [plugin-package-map.json](plugin-package-map.json) define qué se compila y qué entra al artifact final.
-
-Más detalle del sistema de build en [docs/BUILD_SYSTEM.md](docs/BUILD_SYSTEM.md).
-
-## Enriquecimiento del owner
-
-Cuando la integración auxiliar está disponible, el flujo puede:
-- resolver el identificador público del owner
-- construir una URL de perfil usable
-- consultar datos complementarios del owner
-
-Cuando esa integración no está disponible, el plugin sigue siendo útil:
-- la detección de Family Share sigue ocurriendo
-- el servidor puede seguir anunciando y/o aplicando enforcement
-- solo se pierde el enriquecimiento adicional del owner
-
-## Registro y auditoría
-
-El plugin puede registrar eventos para dejar trazabilidad histórica de:
-- quién estaba usando la copia prestada
-- cuándo ocurrió
-- qué datos del owner pudieron resolverse
-- si el servidor estaba en modo de enforcement o solo en modo informativo
-
-## Notas
-
-- La detección principal no depende del backend auxiliar.
-- El backend auxiliar mejora la calidad del dato del owner, pero no es requisito para detectar el evento.
-- El proyecto está pensado para integrarse con el ecosistema público de `SteamWorks` y `SteamIDTools` enlazado arriba.
+[plugin-package-map.json](plugin-package-map.json) selecciona exactamente dos
+entrypoints y los archivos del paquete. Se incluye `steamidtools_stock.inc` para
+las utilidades compartidas; las demás dependencias externas de compilación no se
+distribuyen. Linux y CI usan el mismo builder Python.
 
 ## Créditos
 
-La idea original de este plugin está basada en:
-
-- **Family Share Manager v1.5.5**
-  - https://forums.alliedmods.net/showthread.php?t=293927
+Basado en [Family Share Manager v1.5.5](https://forums.alliedmods.net/showthread.php?t=293927).

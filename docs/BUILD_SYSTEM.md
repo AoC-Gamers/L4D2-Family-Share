@@ -28,11 +28,17 @@ La fuente real del flujo es Python. `make` actúa como interfaz corta y el CI re
 
 En este repo:
 
-- se compilan `l4d2_familyshare` y `l4d2_familyshare_ban_bridge`
-- se publica solo el include público `l4d2_familyshare.inc`
-- se incluyen traducciones y el árbol `configs/sql-init`
+- se compilan exactamente `l4d2_familyshare_core` y `l4d2_familyshare_manager`
+- se publican los includes de core, manager y stocks
+- se incluyen sus módulos internos, traducciones, el archivo inicial de permitidos y `configs/sql-init`
+- no se genera un plugin SQL, de perfiles o de bridge
 
-Las bibliotecas complementarias usadas solo para compilación quedan fuera del bundle final.
+`l4d2_familyshare_stock.inc` reúne las utilidades de identidad y el logger compartido. Cada
+plugin declara e inicializa su propio `g_Log`, con ConVars y archivo independientes.
+
+`steamidtools_stock.inc` se distribuye porque los helpers compartidos reutilizan
+su conversión decimal. Este include no exige cargar el plugin SteamIDTools. Las
+demás bibliotecas complementarias de compilación quedan fuera del bundle final.
 
 ## CI
 

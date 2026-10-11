@@ -80,7 +80,8 @@ validate_manifest_tree(source_root, artifact_root, artifact_manifest)
 
 include_dir = os.path.join(artifact_root, "scripting", "include")
 allowed_include_files = {
-    os.path.join(include_dir, "l4d2_familyshare.inc"),
+    os.path.join(include_dir, name)
+    for name in artifact_manifest.get("scripting", {}).get("include", {}).get("files", [])
 }
 if os.path.isdir(include_dir):
     for root, _, files in os.walk(include_dir):
@@ -88,6 +89,19 @@ if os.path.isdir(include_dir):
             path = os.path.join(root, name)
             if path not in allowed_include_files:
                 raise SystemExit(f"Artifact includes unsupported complementary library: {path}")
+
+actual_plugins = {
+    os.path.relpath(os.path.join(directory, name), artifact_plugins_dir)
+    for directory, _, files in os.walk(artifact_plugins_dir)
+    for name in files
+    if name.endswith(".smx")
+}
+expected_plugin_paths = {
+    f"{plugin}.smx" if bucket == "root" else os.path.join(bucket, f"{plugin}.smx")
+    for plugin, bucket in expected_plugins.items()
+}
+if actual_plugins != expected_plugin_paths:
+    raise SystemExit(f"Unexpected compiled plugins: {actual_plugins - expected_plugin_paths}")
 
 for rel_path in ("README.md", "CHANGELOG.md", "plugin-package-map.json", "compile.log"):
     artifact_path = os.path.join(artifact_dir, rel_path)

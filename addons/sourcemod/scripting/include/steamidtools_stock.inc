@@ -11,16 +11,21 @@
 #include <sourcemod>
 #include <clients>
 
-#define STEAMIDTOOLS_VERSION "2.4.0"
+#define STEAMIDTOOLS_VERSION "2.5.0"
 
 #define ACCOUNTID_LENGTH	   16
 #define STEAMID64_EXACT_LENGTH 17
 #define STEAMID2_MIN_LENGTH	   11
-#define STEAMID3_MIN_LENGTH	   8
+#define STEAMID3_MIN_LENGTH	   7
 #define STEAMID64_BASE		   76561197960265728
 #define STEAMID64_BASE_STRING  "76561197960265728"
 #define STEAMID64_MIN_INDIVIDUAL_STRING "76561197960265729"
 #define STEAMID64_MAX_INDIVIDUAL_STRING "76561202255233023"
+#define ACCOUNTID_UINT32_MAX_STRING "4294967295"
+
+// AccountIDs are uint32 bit patterns, even when the SourcePawn cell is negative.
+// Zero is the invalid identity sentinel. SteamID64 values remain decimal strings.
+
 #define URL_VANITY "https://steamcommunity.com/id/"
 #define URL_SID    "https://steamcommunity.com/profiles/"
 
@@ -50,7 +55,8 @@ enum SteamIDFormat
  */
 stock bool IsValidSteamID2(const char[] szSteamId2)
 {
-	if (strlen(szSteamId2) < 11)
+	int iLength = strlen(szSteamId2);
+	if (iLength < STEAMID2_MIN_LENGTH || iLength > ACCOUNTID_LENGTH + 10)
 	{
 		return false;
 	}
@@ -60,16 +66,27 @@ stock bool IsValidSteamID2(const char[] szSteamId2)
 		return false;
 	}
 
-	int iColonCount = 0;
+	int iSeparatorCount = 0;
 	for (int i = 0; szSteamId2[i] != '\0'; i++)
 	{
 		if (szSteamId2[i] == ':')
-		{
-			iColonCount++;
-		}
+			iSeparatorCount++;
+	}
+	if (iSeparatorCount != 2)
+	{
+		return false;
 	}
 
-	return (iColonCount == 2);
+	char szParts[3][32];
+	if (ExplodeString(szSteamId2, ":", szParts, sizeof(szParts), sizeof(szParts[])) != 3)
+		return false;
+
+	if (!StrEqual(szParts[0], "STEAM_0", false) && !StrEqual(szParts[0], "STEAM_1", false))
+		return false;
+	if (!StrEqual(szParts[1], "0") && !StrEqual(szParts[1], "1"))
+		return false;
+
+	return SteamIDTools_IsSteamID2ZInRange(szParts[2]);
 }
 
 /**
@@ -86,66 +103,184 @@ stock int SteamID2ToAccountID(const char[] szSteamId2)
 		return 0;
 	}
 
-	char szParts[3][16];
+	char szParts[3][32];
 	if (ExplodeString(szSteamId2, ":", szParts, sizeof(szParts), sizeof(szParts[])) != 3)
 	{
 		return 0;
 	}
 
-	int iY = StringToInt(szParts[1]);
-	int iZ = StringToInt(szParts[2]);
+	int iY;
+	int iZ;
+	if (!SteamIDTools_TryParseUInt32(szParts[1], iY)
+		|| (iY != 0 && iY != 1)
+		|| !SteamIDTools_TryParseUInt32(szParts[2], iZ)
+		|| !SteamIDTools_IsSteamID2ZInRange(szParts[2]))
+		return 0;
 
-	return iZ * 2 + iY;
+	int iHigh = iZ >> 15;
+	int iLow = (iZ & 0x7fff) << 1;
+	iLow |= iY;
+	return (iHigh << 16) | iLow;
 }
 
 /**
- * Converts AccountID to SteamID2
+ * Validates that the decimal SteamID2 Z component fits in 31 unsigned bits.
  *
- * @param iAccountId    AccountID to convert
- * @param szBuffer      Buffer to store the result
- * @param iMaxlen       Maximum buffer length
- * @return              true on success, false on failure
+ * @param szValue       Decimal component, with optional leading zeroes.
+ * @return              True for values 0..2147483647, false otherwise.
  */
-stock bool AccountIDToSteamID2(int iAccountId, char[] szBuffer, int iMaxlen)
+stock bool SteamIDTools_IsSteamID2ZInRange(const char[] szValue)
 {
-	if (iAccountId <= 0)
-	{
+	int iValue;
+	return SteamIDTools_TryParseUInt32(szValue, iValue) && iValue >= 0;
+}
+
+/**
+ * Parses decimal digits in the range 0..4294967295 without int64 arithmetic.
+ *
+ * Leading zeroes are accepted within ACCOUNTID_LENGTH. The result retains the
+ * uint32 bit pattern in a signed SourcePawn cell; negative cells can be valid.
+ *
+ * @param szValue       Decimal input, without signs or whitespace.
+ * @param iValue        Receives the uint32 bit pattern, or zero on failure.
+ * @return              True on success, false for invalid input or overflow.
+ */
+stock bool SteamIDTools_TryParseUInt32(const char[] szValue, int &iValue)
+{
+	iValue = 0;
+	int iLength = strlen(szValue);
+	if (iLength <= 0 || iLength > ACCOUNTID_LENGTH)
 		return false;
+
+	int iFirstDigit = 0;
+	while (iFirstDigit < iLength && szValue[iFirstDigit] == '0')
+		iFirstDigit++;
+	if (iFirstDigit == iLength)
+		return true;
+
+	int iSignificantLength = iLength - iFirstDigit;
+	if (iSignificantLength > 10)
+		return false;
+	if (iSignificantLength == 10)
+	{
+		for (int i = 0; i < 10; i++)
+		{
+			char cDigit = szValue[iFirstDigit + i];
+			if (cDigit < '0' || cDigit > '9')
+				return false;
+			if (cDigit != ACCOUNTID_UINT32_MAX_STRING[i])
+			{
+				if (cDigit > ACCOUNTID_UINT32_MAX_STRING[i])
+					return false;
+				break;
+			}
+		}
 	}
 
-	int iY = iAccountId & 1;
-	int iZ = iAccountId >> 1;
+	int iHigh = 0;
+	int iLow = 0;
+	for (int i = iFirstDigit; i < iLength; i++)
+	{
+		if (szValue[i] < '0' || szValue[i] > '9')
+			return false;
 
-	Format(szBuffer, iMaxlen, "STEAM_%d:%d:%d", STEAMIDTOOLS_SID2_UNIVERSE, iY, iZ);
+		int iExpandedLow = (iLow * 10) + (szValue[i] - '0');
+		iHigh = (iHigh * 10) + (iExpandedLow / 65536);
+		iLow = iExpandedLow % 65536;
+	}
+
+	iValue = (iHigh << 16) | iLow;
 	return true;
 }
 
 /**
- * Adds a positive integer to a decimal string value.
+ * Parses a nonzero uint32 Steam AccountID.
  *
- * @param szBaseValue   Base decimal value string
- * @param iAddValue     Positive integer to add
- * @param szResult      Output buffer
- * @param iMaxLength    Output buffer length
- * @return              true on success, false on failure
+ * @param szValue       Decimal AccountID string.
+ * @param iAccountId    Receives the AccountID bit pattern, or zero on failure.
+ * @return              True for values 1..4294967295, false otherwise.
  */
-stock bool SteamIDTools_AddDecimalStringInt(const char[] szBaseValue, int iAddValue, char[] szResult, int iMaxLength)
+stock bool SteamIDTools_TryParseAccountID(const char[] szValue, int &iAccountId)
 {
-	if (iAddValue < 0 || iMaxLength <= 1)
+	if (!SteamIDTools_TryParseUInt32(szValue, iAccountId))
+		return false;
+	return iAccountId != 0;
+}
+
+/**
+ * Formats a nonzero AccountID as unsigned decimal without int64 arithmetic.
+ *
+ * @param iAccountId    AccountID bit pattern; a negative cell can be valid.
+ * @param szBuffer      Destination buffer, unchanged on failure.
+ * @param iMaxLength    Buffer capacity in bytes, including the null terminator.
+ * @return              True on success, false for zero or insufficient capacity.
+ */
+stock bool SteamIDTools_FormatAccountID(int iAccountId, char[] szBuffer, int iMaxLength)
+{
+	if (iAccountId == 0 || iMaxLength <= 1)
 		return false;
 
-	char szAddValue[16];
-	char szReversed[32];
-	IntToString(iAddValue, szAddValue, sizeof(szAddValue));
+	int iHigh = (iAccountId >> 16) & 0xffff;
+	int iLow = iAccountId & 0xffff;
+	char szReversed[ACCOUNTID_LENGTH + 1];
+	int iLength = 0;
+	while (iHigh != 0 || iLow != 0)
+	{
+		if (iLength >= sizeof(szReversed) - 1)
+			return false;
+
+		int iRemainder = iHigh % 10;
+		iHigh /= 10;
+		int iCombined = (iRemainder * 65536) + iLow;
+		iLow = iCombined / 10;
+		szReversed[iLength++] = view_as<char>('0' + (iCombined % 10));
+	}
+
+	if (iLength + 1 > iMaxLength)
+		return false;
+	for (int i = 0; i < iLength; i++)
+		szBuffer[i] = szReversed[iLength - i - 1];
+	szBuffer[iLength] = '\0';
+	return true;
+}
+
+/**
+ * Adds two nonempty unsigned decimal strings without int64 arithmetic.
+ *
+ * The result can contain at most 63 digits. Leading zeroes are preserved.
+ *
+ * @param szBaseValue   First decimal operand.
+ * @param szAddValue    Second decimal operand.
+ * @param szResult      Destination buffer, unchanged on failure.
+ * @param iMaxLength    Buffer capacity in bytes, including the null terminator.
+ * @return              True on success, false for invalid input or capacity.
+ */
+stock bool SteamIDTools_AddDecimalStrings(const char[] szBaseValue, const char[] szAddValue, char[] szResult, int iMaxLength)
+{
+	if (iMaxLength <= 1)
+		return false;
+	if (szBaseValue[0] == '\0' || szAddValue[0] == '\0')
+		return false;
+	for (int i = 0; szBaseValue[i] != '\0'; i++)
+	{
+		if (szBaseValue[i] < '0' || szBaseValue[i] > '9')
+			return false;
+	}
+	for (int i = 0; szAddValue[i] != '\0'; i++)
+	{
+		if (szAddValue[i] < '0' || szAddValue[i] > '9')
+			return false;
+	}
 
 	int iBasePos = strlen(szBaseValue) - 1;
 	int iAddPos = strlen(szAddValue) - 1;
 	int iCarry = 0;
 	int iReversedLength = 0;
+	char szReversed[64];
 
 	while (iBasePos >= 0 || iAddPos >= 0 || iCarry != 0)
 	{
-		if (iReversedLength >= sizeof(szReversed) - 1)
+		if (iReversedLength >= 64 - 1)
 			return false;
 
 		int iDigit = iCarry;
@@ -171,19 +306,123 @@ stock bool SteamIDTools_AddDecimalStringInt(const char[] szBaseValue, int iAddVa
 }
 
 /**
+ * Converts a public individual SteamID64 to a nonzero uint32 AccountID.
+ *
+ * The subtraction uses decimal strings. Values above 2147483647 retain their
+ * unsigned bit pattern in a negative SourcePawn cell; compare failures to zero.
+ *
+ * @param szSteamId64   Decimal SteamID64 string.
+ * @param iAccountId    Receives the AccountID bit pattern, or zero on failure.
+ * @return              True on success, false for invalid SteamID64 input.
+ */
+stock bool SteamIDTools_SteamID64ToAccountID(const char[] szSteamId64, int &iAccountId)
+{
+	iAccountId = 0;
+	if (!IsValidSteamID64(szSteamId64))
+		return false;
+
+	char szReversed[STEAMID64_EXACT_LENGTH + 1];
+	int iSourcePosition = strlen(szSteamId64) - 1;
+	int iBasePosition = strlen(STEAMID64_BASE_STRING) - 1;
+	int iBorrow = 0;
+	int iLength = 0;
+	while (iSourcePosition >= 0)
+	{
+		if (iLength >= sizeof(szReversed) - 1)
+			return false;
+
+		int iDigit = (szSteamId64[iSourcePosition--] - '0') - iBorrow;
+		if (iBasePosition >= 0)
+			iDigit -= STEAMID64_BASE_STRING[iBasePosition--] - '0';
+		if (iDigit < 0)
+		{
+			iDigit += 10;
+			iBorrow = 1;
+		}
+		else
+		{
+			iBorrow = 0;
+		}
+		szReversed[iLength++] = view_as<char>('0' + iDigit);
+	}
+	if (iBasePosition >= 0 || iBorrow != 0)
+		return false;
+
+	while (iLength > 1 && szReversed[iLength - 1] == '0')
+		iLength--;
+
+	char szAccountId[ACCOUNTID_LENGTH + 1];
+	for (int i = 0; i < iLength; i++)
+		szAccountId[i] = szReversed[iLength - i - 1];
+	szAccountId[iLength] = '\0';
+	return SteamIDTools_TryParseAccountID(szAccountId, iAccountId);
+}
+
+/**
+ * Converts AccountID to SteamID2
+ *
+ * @param iAccountId    Nonzero uint32 AccountID bit pattern; may be negative.
+ * @param szBuffer      Buffer to store the result
+ * @param iMaxlen       Maximum buffer length
+ * @return              true on success, false on failure
+ */
+stock bool AccountIDToSteamID2(int iAccountId, char[] szBuffer, int iMaxlen)
+{
+	if (iAccountId == 0 || iMaxlen <= 0)
+	{
+		return false;
+	}
+
+	int iY = iAccountId & 1;
+	int iHigh = (iAccountId >> 16) & 0xffff;
+	int iLow = iAccountId & 0xffff;
+	int iZ = (iHigh >> 1) << 16;
+	iZ |= (iLow >> 1) | ((iHigh & 1) << 15);
+
+	char szResult[32];
+	Format(szResult, sizeof(szResult), "STEAM_%d:%d:%d", STEAMIDTOOLS_SID2_UNIVERSE, iY, iZ);
+	if (strlen(szResult) >= iMaxlen)
+		return false;
+	strcopy(szBuffer, iMaxlen, szResult);
+	return true;
+}
+
+/**
+ * Adds a nonnegative signed integer to an unsigned decimal string.
+ *
+ * @param szBaseValue   Base decimal value string
+ * @param iAddValue     Signed value in the range 0..2147483647.
+ * @param szResult      Output buffer
+ * @param iMaxLength    Output buffer length
+ * @return              true on success, false on failure
+ */
+stock bool SteamIDTools_AddDecimalStringInt(const char[] szBaseValue, int iAddValue, char[] szResult, int iMaxLength)
+{
+	if (iAddValue < 0)
+		return false;
+
+	char szAddValue[16];
+	IntToString(iAddValue, szAddValue, sizeof(szAddValue));
+	return SteamIDTools_AddDecimalStrings(szBaseValue, szAddValue, szResult, iMaxLength);
+}
+
+/**
  * Converts AccountID to SteamID64.
  *
- * @param iAccountId    AccountID to convert
+ * @param iAccountId    Nonzero uint32 AccountID bit pattern; may be negative.
  * @param szBuffer      Buffer to store the result
  * @param iMaxlen       Maximum buffer length
  * @return              true on success, false on failure
  */
 stock bool SteamIDTools_AccountIDToSteamID64(int iAccountId, char[] szBuffer, int iMaxlen)
 {
-	if (iAccountId <= 0)
+	if (iAccountId == 0)
 		return false;
 
-	return SteamIDTools_AddDecimalStringInt(STEAMID64_BASE_STRING, iAccountId, szBuffer, iMaxlen);
+	char szAccountId[ACCOUNTID_LENGTH + 1];
+	if (!SteamIDTools_FormatAccountID(iAccountId, szAccountId, sizeof(szAccountId)))
+		return false;
+	return SteamIDTools_AddDecimalStrings(STEAMID64_BASE_STRING, szAccountId, szBuffer, iMaxlen);
 }
 
 /**
@@ -229,7 +468,8 @@ stock bool IsValidSteamID64(const char[] szSteamId64)
  */
 stock bool IsValidSteamID3(const char[] szSteamId3)
 {
-	if (strlen(szSteamId3) < 8)
+	int iLength = strlen(szSteamId3);
+	if (iLength < STEAMID3_MIN_LENGTH || iLength > ACCOUNTID_LENGTH + 6)
 	{
 		return false;
 	}
@@ -239,12 +479,18 @@ stock bool IsValidSteamID3(const char[] szSteamId3)
 		return false;
 	}
 
-	if (szSteamId3[strlen(szSteamId3) - 1] != ']')
+	if (szSteamId3[iLength - 1] != ']')
 	{
 		return false;
 	}
 
-	return true;
+	char szAccountId[ACCOUNTID_LENGTH + 1];
+	int iAccountLength = iLength - 6;
+	for (int i = 0; i < iAccountLength; i++)
+		szAccountId[i] = szSteamId3[i + 5];
+	szAccountId[iAccountLength] = '\0';
+	int iAccountId;
+	return SteamIDTools_TryParseAccountID(szAccountId, iAccountId);
 }
 
 /**
@@ -270,25 +516,32 @@ stock int SteamID3ToAccountID(const char[] szSteamId3)
 		szTemp[iLen - 1] = '\0';
 	}
 
-	return StringToInt(szTemp);
+	int iAccountId;
+	if (!SteamIDTools_TryParseAccountID(szTemp, iAccountId))
+		return 0;
+	return iAccountId;
 }
 
 /**
  * Converts AccountID to SteamID3
  *
- * @param iAccountId    AccountID to convert
+ * @param iAccountId    Nonzero uint32 AccountID bit pattern; may be negative.
  * @param szBuffer      Buffer to store the result
  * @param iMaxlen       Maximum buffer length
  * @return              true on success, false on failure
  */
 stock bool AccountIDToSteamID3(int iAccountId, char[] szBuffer, int iMaxlen)
 {
-	if (iAccountId <= 0)
+	if (iAccountId == 0 || iMaxlen <= 0)
 	{
 		return false;
 	}
 
-	Format(szBuffer, iMaxlen, "[U:1:%d]", iAccountId);
+	char szResult[32];
+	Format(szResult, sizeof(szResult), "[U:1:%u]", iAccountId);
+	if (strlen(szResult) >= iMaxlen)
+		return false;
+	strcopy(szBuffer, iMaxlen, szResult);
 	return true;
 }
 
@@ -395,7 +648,7 @@ stock int GetClientAccountID(int iClient)
  */
 stock int FindClientByAccountID(int iAccountId)
 {
-	if (iAccountId <= 0)
+	if (iAccountId == 0)
 	{
 		return 0;
 	}
@@ -511,8 +764,8 @@ stock SteamIDFormat DetectSteamIDFormat(const char[] szSteamId)
 
 		if (bIsNumeric)
 		{
-			int iAccountId = StringToInt(szSteamId);
-			if (iAccountId > 0)
+			int iAccountId;
+			if (SteamIDTools_TryParseAccountID(szSteamId, iAccountId))
 			{
 				return STEAMID_FORMAT_ACCOUNTID;
 			}

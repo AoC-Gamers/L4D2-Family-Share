@@ -129,7 +129,11 @@ native bool SteamIDTools_GetApiBaseUrl(char[] szBuffer, int iMaxLen);
 /**
  * Queues a single online backend request.
  *
- * @param provider      Provider to use (`SteamWorks` or `system2`)
+ * `SteamIDToolsProvider_Auto` means "auto". The API plugin selects the
+ * best available provider, preferring a backend-ready transport and falling
+ * back to any loaded provider when health has not been established yet.
+ *
+ * @param provider      Provider to use (`SteamWorks`, `system2`, or `Unknown` for auto)
  * @param szEndpoint    API endpoint, usually one of the `API_*` constants
  * @param szSteamId     Input value sent as `steamid=...`
  * @param szTag         Opaque caller tag returned in the completion forward
@@ -140,7 +144,11 @@ native int SteamIDTools_RequestConversion(SteamIDToolsProvider provider, const c
 /**
  * Queues a batch online backend request.
  *
- * @param provider      Provider to use (`SteamWorks` or `system2`)
+ * `SteamIDToolsProvider_Auto` means "auto". The API plugin selects the
+ * best available provider, preferring a backend-ready transport and falling
+ * back to any loaded provider when health has not been established yet.
+ *
+ * @param provider      Provider to use (`SteamWorks`, `system2`, or `Unknown` for auto)
  * @param szEndpoint    API endpoint, usually one of the `API_*` constants
  * @param szBatch       Comma-separated batch sent as `steamid=...`
  * @param szTag         Opaque caller tag returned in the completion forward

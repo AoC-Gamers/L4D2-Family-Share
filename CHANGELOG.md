@@ -6,15 +6,22 @@ Todos los cambios relevantes de este proyecto se documentarán en este archivo.
 
 ### Added
 
-- none.
+- Core y manager 2.0.0 con APIs separadas; resolución de perfiles asíncrona por AccountID.
+- Excepciones persistentes exclusivas por AccountID del borrower y comandos administrativos.
+- Identidad del owner por AccountID y decisión `allowed` en el historial, con migración explícita del esquema 1.4.
 
 ### Changed
 
-- none.
+- Bibliotecas SteamIDTools sincronizadas con 2.5.0; el stock compartido delega la conversión uint32 y el parseo de AccountID, conservando la escritura canónica de la lista de permitidos.
+- SQL, historial, anuncios y expulsiones pasan al manager; perfiles permanecen dentro del core.
+- El paquete contiene únicamente los dos nuevos plugins. Se eliminan el bridge de BanSystem Access y su include de compilación.
+- Se elimina la API combinada anterior: include, alias de biblioteca, natives y forward. Los consumidores deben migrar a las APIs de core y manager.
 
 ### Fixed
 
-- none.
+- Expulsiones diferidas protegidas por serial y AccountID ante desconexión o reutilización de slots.
+- Solicitudes de perfiles con timeout y fallback, callbacks SQL protegidos por generación y pendientes conservados hasta confirmación.
+- Argumentos de traducción sincronizados en inglés y español.
 
 ## [1.4.0]
 

@@ -10,11 +10,11 @@
 	}
 	"SharedCopyDetected"
 	{
-		"es"	"{green}%s{default} ({olive}%s{default}) está usando una copia prestada de L4D2."
+		"es"	"{green}{1}{default} ({olive}{2}{default}) está usando una copia prestada de L4D2."
 	}
 	"OwnerProfileResolvedLabel"
 	{
-		"es"	"Perfil del dueño ({green}%s{default}):"
+		"es"	"Perfil del dueño ({green}{1}{default}):"
 	}
 	"OwnerProfileLabel"
 	{
@@ -22,7 +22,7 @@
 	}
 	"OwnerProfileUrl"
 	{
-		"es"	"{olive}%s{default}"
+		"es"	"{olive}{1}{default}"
 	}
 	"UnknownOwner"
 	{
@@ -31,5 +31,21 @@
 	"DisconnectedPlayer"
 	{
 		"es"	"Jugador desconectado"
+	}
+	"AllowAccountUsage"
+	{
+		"es"	"Usa sm_familyshare_allow o sm_familyshare_disallow con un único AccountID numérico del borrower."
+	}
+	"AllowAccountSaveFailed"
+	{
+		"es"	"No se pudo cargar o guardar el archivo de cuentas permitidas. Revisa el log de errores de SourceMod."
+	}
+	"AllowAccountUpdated"
+	{
+		"es"	"AccountID del borrower {1}: permitido={2}."
+	}
+	"AllowAccountsReloaded"
+	{
+		"es"	"Se recargaron {1} cuentas borrower permitidas."
 	}
 }

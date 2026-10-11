@@ -2,8 +2,8 @@
   "build": {
     "plugins": {
       "root": [
-        "l4d2_familyshare",
-        "l4d2_familyshare_ban_bridge"
+        "l4d2_familyshare_core",
+        "l4d2_familyshare_manager"
       ]
     }
   },
@@ -12,12 +12,19 @@
       "sourcemod": {
         "scripting": {
           "files": [
-            "l4d2_familyshare.sp",
-            "l4d2_familyshare_ban_bridge.sp"
+            "l4d2_familyshare_core.sp",
+            "l4d2_familyshare_manager.sp"
+          ],
+          "dirs": [
+            "l4d2_familyshare_core",
+            "l4d2_familyshare_manager"
           ],
           "include": {
             "files": [
-              "l4d2_familyshare.inc"
+              "l4d2_familyshare_core.inc",
+              "l4d2_familyshare_manager.inc",
+              "l4d2_familyshare_stock.inc",
+              "steamidtools_stock.inc"
             ]
           }
         },
@@ -25,6 +32,9 @@
           "all": true
         },
         "configs": {
+          "files": [
+            "l4d2_familyshare_allowed.kv"
+          ],
           "dirs": [
             "sql-init"
           ]
