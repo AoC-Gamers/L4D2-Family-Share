@@ -53,3 +53,10 @@ El workflow principal separa:
 ## WSL
 
 Si el repo se compila desde WSL sobre `/mnt/...`, el builder puede usar un workspace temporal Linux para evitar el costo de I/O sobre el filesystem montado de Windows.
+
+## Regresion de identidad offline
+
+`make test-offline` ejecuta la admision y el frame productivos de perfiles con
+servicios SourceMod modelados y ASan/UBSan. Verifica la identidad uint32 local,
+que summaries se inicie en el frame posterior y que se rechacen requests tras
+iniciar la descarga. No opera SRCDS ni consulta Steam.

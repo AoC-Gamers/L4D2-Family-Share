@@ -5,42 +5,13 @@
 #include <steamworks>
 #include <l4d2_familyshare_stock>
 
-#undef REQUIRE_PLUGIN
-#include <steamidtools>
-#define REQUIRE_PLUGIN
-
 enum struct FamilyShareCoreRuntimeState
 {
 	bool lateLoad;
-	bool hasSteamIDTools;
-	bool canConvert;
-	int providerGeneration;
 
 	void Reset()
 	{
 		this.lateLoad = false;
-		this.hasSteamIDTools = false;
-		this.canConvert = false;
-		this.providerGeneration = 0;
-	}
-
-	void DetectLibraries()
-	{
-		this.hasSteamIDTools = LibraryExists(STEAMIDTOOLS_LIBRARY);
-		if (!this.hasSteamIDTools)
-			this.canConvert = false;
-	}
-
-	void SetLibraryAvailability(const char[] name, bool available)
-	{
-		if (!StrEqual(name, STEAMIDTOOLS_LIBRARY))
-			return;
-		this.hasSteamIDTools = available;
-		if (!available)
-		{
-			this.canConvert = false;
-			this.providerGeneration++;
-		}
 	}
 }
 
@@ -59,7 +30,7 @@ public Plugin myinfo =
 	name = "L4D2 Family Share Core",
 	author = "Lechuga",
 	description = "Family Sharing detection, identities and optional profile enrichment.",
-	version = "2.0.0",
+	version = "2.0.1",
 	url = "https://github.com/AoC-Gamers/L4D2-Family-Share"
 };
 
@@ -84,24 +55,9 @@ public void OnPluginStart()
 	AutoExecConfig(true, "l4d2_familyshare_core");
 }
 
-public void OnAllPluginsLoaded()
-{
-	g_Runtime.DetectLibraries();
-}
-
 public void OnConfigsExecuted()
 {
-	FamilyShare_LogNormal(g_Log, "lifecycle", "event=configured late_load=%d steamidtools=%d", g_Runtime.lateLoad, g_Runtime.hasSteamIDTools);
-}
-
-public void OnLibraryAdded(const char[] name)
-{
-	g_Runtime.SetLibraryAvailability(name, true);
-}
-
-public void OnLibraryRemoved(const char[] name)
-{
-	g_Runtime.SetLibraryAvailability(name, false);
+	FamilyShare_LogNormal(g_Log, "lifecycle", "event=configured late_load=%d", g_Runtime.lateLoad);
 }
 
 public void OnPluginEnd()

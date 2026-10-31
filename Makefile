@@ -33,3 +33,7 @@ clean:
 
 clean-all:
 	$(PYTHON) -c "import shutil, pathlib; [shutil.rmtree(p, ignore_errors=True) for p in map(pathlib.Path, ['.build', 'dist', 'deps'])]"
+
+.PHONY: test-offline
+test-offline:
+	$(PYTHON) -m unittest discover -s tests -v

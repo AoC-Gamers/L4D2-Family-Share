@@ -11,7 +11,7 @@
 #include <sourcemod>
 #include <clients>
 
-#define STEAMIDTOOLS_VERSION "2.5.0"
+#define STEAMIDTOOLS_VERSION "3.0.0"
 
 #define ACCOUNTID_LENGTH	   16
 #define STEAMID64_EXACT_LENGTH 17

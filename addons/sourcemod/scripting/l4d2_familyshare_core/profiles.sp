@@ -1,15 +1,11 @@
 ConVar g_cvSteamApiKey;
-ConVar g_cvSteamIDToolsBackend;
 StringMap g_smProfileRequests;
-StringMap g_smConversions;
 int g_iNextProfileRequest = 1;
 bool g_bProfilesStopping;
 
 enum struct FamilyShareProfileRequest
 {
 	int accountId;
-	int conversionId;
-	int providerGeneration;
 	Handle httpRequest;
 	float deadline;
 	char steamId64[32];
@@ -20,9 +16,7 @@ enum struct FamilyShareProfileRequest
 void Profiles_Init()
 {
 	g_cvSteamApiKey = CreateConVar("l4d2_familyshare_steam_api_key", "", "Steam Web API key for optional profile summaries.", FCVAR_PROTECTED | FCVAR_DONTRECORD);
-	g_cvSteamIDToolsBackend = CreateConVar("l4d2_familyshare_steamidtools_backend", "1", "Use the optional SteamIDTools backend for profile identity enrichment.", FCVAR_NONE, true, 0.0, true, 1.0);
 	g_smProfileRequests = new StringMap();
-	g_smConversions = new StringMap();
 	// Requests intentionally survive map changes; deadlines use engine uptime.
 	CreateTimer(1.0, Timer_ProfileRequests, _, TIMER_REPEAT);
 }
@@ -62,42 +56,11 @@ void Profiles_Set(int requestId, FamilyShareProfileRequest request)
 	g_smProfileRequests.SetArray(key, request, sizeof(request));
 }
 
-bool Profiles_bCanConvert()
-{
-	g_Runtime.canConvert = g_Runtime.hasSteamIDTools
-		&& GetFeatureStatus(FeatureType_Native, "SteamIDTools_IsProviderReady") == FeatureStatus_Available
-		&& GetFeatureStatus(FeatureType_Native, "SteamIDTools_RequestConversion") == FeatureStatus_Available;
-	return g_cvSteamIDToolsBackend.BoolValue && g_Runtime.canConvert;
-}
-
 public void Frame_StartProfileRequest(any requestId)
 {
 	FamilyShareProfileRequest request;
 	if (!Profiles_Get(requestId, request))
 		return;
-	SteamIDToolsProvider provider = SteamIDToolsProvider_Auto;
-	if (Profiles_bCanConvert())
-	{
-		if (SteamIDTools_IsProviderReady(SteamIDToolsProvider_SteamWorks))
-			provider = SteamIDToolsProvider_SteamWorks;
-		else if (SteamIDTools_IsProviderReady(SteamIDToolsProvider_System2))
-			provider = SteamIDToolsProvider_System2;
-	}
-	if (provider != SteamIDToolsProvider_Auto)
-	{
-		char account[16];
-		FormatEx(account, sizeof(account), "%u", request.accountId);
-		request.conversionId = SteamIDTools_RequestConversion(provider, API_AIDtoSID64, account, "familyshare_profile");
-		if (request.conversionId > 0)
-		{
-			request.providerGeneration = g_Runtime.providerGeneration;
-			char key[48];
-			FormatEx(key, sizeof(key), "%d:%d", request.providerGeneration, request.conversionId);
-			g_smConversions.SetValue(key, requestId);
-			Profiles_Set(requestId, request);
-			return;
-		}
-	}
 	Profiles_StartSummary(requestId, request);
 }
 
@@ -131,34 +94,6 @@ void Profiles_StartSummary(int requestId, FamilyShareProfileRequest request)
 	Profiles_Set(requestId, request);
 }
 
-public void SteamIDTools_OnRequestFinished(int conversionId, SteamIDToolsProvider provider, bool success,
-	bool batch, const char[] endpoint, const char[] input, const char[] result, const char[] tag)
-{
-	if (batch || !StrEqual(tag, "familyshare_profile") || !StrEqual(endpoint, API_AIDtoSID64))
-		return;
-	char key[48];
-	FormatEx(key, sizeof(key), "%d:%d", g_Runtime.providerGeneration, conversionId);
-	int requestId;
-	if (!g_smConversions.GetValue(key, requestId))
-		return;
-	g_smConversions.Remove(key);
-	FamilyShareProfileRequest request;
-	if (!Profiles_Get(requestId, request) || request.conversionId != conversionId)
-		return;
-	request.conversionId = 0;
-	// A provider cannot change the identity attached to this request.
-	if (success)
-	{
-		char resolved[32];
-		strcopy(resolved, sizeof(resolved), result);
-		TrimString(resolved);
-		if (!StrEqual(resolved, request.steamId64))
-			FamilyShare_LogDebug(g_Log, 2, "event=profile_conversion_mismatch request=%d", requestId);
-	}
-	Profiles_Set(requestId, request);
-	Profiles_StartSummary(requestId, request);
-}
-
 public void OnProfileSummaryCompleted(Handle http, bool failure, bool successful, EHTTPStatusCode status, any requestId)
 {
 	FamilyShareProfileRequest request;
@@ -190,11 +125,6 @@ void Profiles_Finish(int requestId)
 	char key[48];
 	IntToString(requestId, key, sizeof(key));
 	g_smProfileRequests.Remove(key);
-	if (request.conversionId > 0)
-	{
-		FormatEx(key, sizeof(key), "%d:%d", request.providerGeneration, request.conversionId);
-		g_smConversions.Remove(key);
-	}
 	if (request.httpRequest != null)
 		delete request.httpRequest;
 	Call_StartForward(g_fwdProfileResolved);
@@ -217,8 +147,7 @@ public Action Timer_ProfileRequests(Handle timer)
 		FamilyShareProfileRequest request;
 		if (!Profiles_Get(requestId, request))
 			continue;
-		if (GetEngineTime() >= request.deadline
-			|| (request.conversionId > 0 && request.providerGeneration != g_Runtime.providerGeneration))
+		if (GetEngineTime() >= request.deadline)
 			Profiles_Finish(requestId);
 	}
 	delete snapshot;
