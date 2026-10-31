@@ -1,14 +1,14 @@
 /*
-	steamidtools_helpers.inc
+	steamidtools/commands.inc
 	Copyright (C) 2026 AoC-Gamers
 */
 
-#if defined _steamidtools_helpers_included
+#if defined _steamidtools_commands_included
 	#endinput
 #endif
-#define _steamidtools_helpers_included
+#define _steamidtools_commands_included
 
-#include <steamidtools_stock>
+#include <steamidtools>
 
 /**
  * Returns a command argument trimmed and without surrounding quotes.

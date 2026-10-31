@@ -36,8 +36,8 @@ En este repo:
 `l4d2_familyshare_stock.inc` reúne las utilidades de identidad y el logger compartido. Cada
 plugin declara e inicializa su propio `g_Log`, con ConVars y archivo independientes.
 
-`steamidtools_stock.inc` se distribuye porque los helpers compartidos reutilizan
-su conversión decimal. Este include no exige cargar el plugin SteamIDTools. Las
+`steamidtools.inc` y el directorio `steamidtools/` se distribuyen como toolkit
+4.0.0; los helpers compartidos reutilizan la conversion pura del principal. Este include no exige cargar el plugin SteamIDTools. Las
 demás bibliotecas complementarias de compilación quedan fuera del bundle final.
 
 ## CI

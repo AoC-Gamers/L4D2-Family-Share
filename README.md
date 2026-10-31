@@ -49,7 +49,7 @@ make release
 ```
 
 [plugin-package-map.json](plugin-package-map.json) selecciona exactamente dos
-entrypoints y los archivos del paquete. Se incluye `steamidtools_stock.inc` para
+entrypoints y los archivos del paquete. Se incluye `steamidtools.inc` para
 las utilidades compartidas; las demás dependencias externas de compilación no se
 distribuyen. Linux y CI usan el mismo builder Python.
 

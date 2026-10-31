@@ -24,7 +24,10 @@
               "l4d2_familyshare_core.inc",
               "l4d2_familyshare_manager.inc",
               "l4d2_familyshare_stock.inc",
-              "steamidtools_stock.inc"
+              "steamidtools.inc"
+            ],
+            "dirs": [
+              "steamidtools"
             ]
           }
         },
