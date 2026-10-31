@@ -60,3 +60,11 @@ Si el repo se compila desde WSL sobre `/mnt/...`, el builder puede usar un works
 servicios SourceMod modelados y ASan/UBSan. Verifica la identidad uint32 local,
 que summaries se inicie en el frame posterior y que se rechacen requests tras
 iniciar la descarga. No opera SRCDS ni consulta Steam.
+
+## Validación de includes anidados
+
+El validador acepta los archivos individuales y los directorios declarados en
+`plugin-package-map.json`, incluidos `steamidtools/clients.inc` y
+`steamidtools/commands.inc`. Cada archivo del directorio fuente debe estar en el
+paquete; cualquier biblioteca adicional fuera de esas rutas declaradas se rechaza.
+Las pruebas de empaquetado se ejecutan antes de publicar canales y releases.
