@@ -162,6 +162,7 @@ jobs:
       - name: Stage artifact
         run: |
           python3 ./scripts/stage-artifact.py . ./.build/package-smx ./deps/build-smx-compile.log
+          python3 -m unittest discover -s tests -p test_artifact_manifest.py -v
           bash ./scripts/ci-validate-artifact.sh
 
       - name: Package release assets

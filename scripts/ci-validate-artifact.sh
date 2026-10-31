@@ -79,10 +79,20 @@ artifact_manifest = package_map.get("artifact", {}).get("addons", {}).get("sourc
 validate_manifest_tree(source_root, artifact_root, artifact_manifest)
 
 include_dir = os.path.join(artifact_root, "scripting", "include")
+source_include_dir = os.path.join(source_root, "scripting", "include")
+include_manifest = artifact_manifest.get("scripting", {}).get("include", {})
 allowed_include_files = {
     os.path.join(include_dir, name)
-    for name in artifact_manifest.get("scripting", {}).get("include", {}).get("files", [])
+    for name in include_manifest.get("files", [])
 }
+for relative_dir in include_manifest.get("dirs", []):
+    for directory, _, files in os.walk(os.path.join(source_include_dir, relative_dir)):
+        for name in files:
+            relative_file = os.path.relpath(os.path.join(directory, name), source_include_dir)
+            path = os.path.join(include_dir, relative_file)
+            if not os.path.isfile(path):
+                raise SystemExit(f"Missing packaged artifact file: {path}")
+            allowed_include_files.add(path)
 if os.path.isdir(include_dir):
     for root, _, files in os.walk(include_dir):
         for name in files:

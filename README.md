@@ -21,7 +21,7 @@ detecciones e historial, pero manager no los expulsa por Family Sharing.
 ## Dependencias
 
 - [SteamWorks](https://github.com/AoC-Gamers/SteamWorks): extensión requerida para la validación de licencias y HTTP opcional de perfiles.
-- [SteamIDTools](https://github.com/AoC-Gamers/SteamIDTools): plugin opcional para enriquecimiento de identidad.
+- [SteamIDTools](https://github.com/AoC-Gamers/SteamIDTools): toolkit offline para conversiones de identidad; no requiere plugin residente.
 
 SteamID64 y el enlace de perfil tienen conversión local como fallback. Una clave
 Steam Web API permite consultar el nombre del owner; su ausencia o un fallo de
@@ -49,7 +49,7 @@ make release
 ```
 
 [plugin-package-map.json](plugin-package-map.json) selecciona exactamente dos
-entrypoints y los archivos del paquete. Se incluye `steamidtools_stock.inc` para
+entrypoints y los archivos del paquete. Se incluye `steamidtools.inc` para
 las utilidades compartidas; las demás dependencias externas de compilación no se
 distribuyen. Linux y CI usan el mismo builder Python.
 

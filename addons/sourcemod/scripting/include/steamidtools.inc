@@ -8,173 +8,684 @@
 #endif
 #define _steamidtools_included
 
-#include <steamidtools_stock>
+#include <sourcemod>
 
-#define STEAMIDTOOLS_LIBRARY            "steamidtools"
+#define STEAMIDTOOLS_VERSION "4.0.0"
 
-#define STEAMIDTOOLS_MAX_ENDPOINT_LENGTH 32
-#define STEAMIDTOOLS_MAX_REQUEST_LENGTH  1024
-#define STEAMIDTOOLS_MAX_RESULT_LENGTH   4096
-#define STEAMIDTOOLS_MAX_TAG_LENGTH      64
+#define ACCOUNTID_LENGTH	   16
+#define STEAMID64_EXACT_LENGTH 17
+#define STEAMID2_MIN_LENGTH	   11
+#define STEAMID3_MIN_LENGTH	   7
+#define STEAMID64_BASE		   76561197960265728
+#define STEAMID64_BASE_STRING  "76561197960265728"
+#define STEAMID64_MIN_INDIVIDUAL_STRING "76561197960265729"
+#define STEAMID64_MAX_INDIVIDUAL_STRING "76561202255233023"
+#define ACCOUNTID_UINT32_MAX_STRING "4294967295"
 
-#define API_SID64toAID    "/SID64toAID"
-#define API_SID64toSID2   "/SID64toSID2"
-#define API_SID64toSID3   "/SID64toSID3"
-#define API_AIDtoSID64    "/AIDtoSID64"
-#define API_SID2toSID64   "/SID2toSID64"
-#define API_SID3toSID64   "/SID3toSID64"
-#define API_Health        "/health"
+// AccountIDs are uint32 bit patterns, even when the SourcePawn cell is negative.
+// Zero is the invalid identity sentinel. SteamID64 values remain decimal strings.
 
-public SharedPlugin __pl_steamidtools =
-{
-	name = STEAMIDTOOLS_LIBRARY,
-	file = "steamidtools.smx",
-#if defined REQUIRE_PLUGIN
-	required = 1,
-#else
-	required = 0,
-#endif
-};
+#define URL_VANITY "https://steamcommunity.com/id/"
+#define URL_SID    "https://steamcommunity.com/profiles/"
 
-#if !defined REQUIRE_PLUGIN
-public void __pl_steamidtools_SetNTVOptional()
-{
-	MarkNativeAsOptional("SteamIDTools_IsProviderAvailable");
-	MarkNativeAsOptional("SteamIDTools_GetBackendStatus");
-	MarkNativeAsOptional("SteamIDTools_IsProviderReady");
-	MarkNativeAsOptional("SteamIDTools_RequestHealthCheck");
-	MarkNativeAsOptional("SteamIDTools_GetBackendStatusMessage");
-	MarkNativeAsOptional("SteamIDTools_GetApiBaseUrl");
-	MarkNativeAsOptional("SteamIDTools_RequestConversion");
-	MarkNativeAsOptional("SteamIDTools_RequestBatch");
-}
+#if !defined STEAMIDTOOLS_SID2_UNIVERSE
+	#define STEAMIDTOOLS_SID2_UNIVERSE 1
 #endif
 
-enum SteamIDToolsProvider
-{
-	SteamIDToolsProvider_Auto = 0,
-	SteamIDToolsProvider_SteamWorks,
-	SteamIDToolsProvider_System2
-}
-
-enum SteamIDToolsBackendStatus
-{
-	SteamIDToolsBackendStatus_Unknown = 0,
-	SteamIDToolsBackendStatus_Online,
-	SteamIDToolsBackendStatus_Offline
-}
-
 /**
- * Returns true when the SteamIDTools API plugin library is loaded.
+ * Enum for different SteamID formats
  */
-stock bool SteamIDTools_IsLibraryAvailable()
+enum SteamIDFormat
 {
-	return LibraryExists(STEAMIDTOOLS_LIBRARY);
+	STEAMID_FORMAT_UNKNOWN = 0,
+	STEAMID_FORMAT_STEAMID2,
+	STEAMID_FORMAT_STEAMID3,
+	STEAMID_FORMAT_STEAMID64,
+	STEAMID_FORMAT_ACCOUNTID,
+	STEAMID_FORMAT_SPECIAL
 }
 
 /**
- * Returns true if the requested online provider is available in the API plugin.
+ * Validates if a SteamID2 has valid format
+ * Expected format: STEAM_X:Y:Z where X=0|1, Y=0|1, Z=number
  *
- * @param provider      Provider enum value
- * @return              true when the provider can execute HTTP requests
+ * @param szSteamId2    SteamID2 string to validate
+ * @return              true if valid format, false otherwise
  */
-native bool SteamIDTools_IsProviderAvailable(SteamIDToolsProvider provider);
+stock bool IsValidSteamID2(const char[] szSteamId2)
+{
+	int iLength = strlen(szSteamId2);
+	if (iLength < STEAMID2_MIN_LENGTH || iLength > ACCOUNTID_LENGTH + 10)
+	{
+		return false;
+	}
+
+	if (StrContains(szSteamId2, "STEAM_", false) != 0)
+	{
+		return false;
+	}
+
+	int iSeparatorCount = 0;
+	for (int i = 0; szSteamId2[i] != '\0'; i++)
+	{
+		if (szSteamId2[i] == ':')
+			iSeparatorCount++;
+	}
+	if (iSeparatorCount != 2)
+	{
+		return false;
+	}
+
+	char szParts[3][32];
+	if (ExplodeString(szSteamId2, ":", szParts, sizeof(szParts), sizeof(szParts[])) != 3)
+		return false;
+
+	if (!StrEqual(szParts[0], "STEAM_0", false) && !StrEqual(szParts[0], "STEAM_1", false))
+		return false;
+	if (!StrEqual(szParts[1], "0") && !StrEqual(szParts[1], "1"))
+		return false;
+
+	return SteamIDTools_IsSteamID2ZInRange(szParts[2]);
+}
 
 /**
- * Returns the cached backend status for the selected provider.
+ * Converts SteamID2 to AccountID
+ * Format: STEAM_X:Y:Z -> AccountID = Z * 2 + Y
  *
- * `Unknown` means no successful or failed health probe has been cached yet,
- * or the provider is currently unavailable.
- *
- * @param provider      Provider enum value
- * @return              Cached backend status enum
+ * @param szSteamId2    SteamID2 string (STEAM_X:Y:Z)
+ * @return              AccountID, or 0 if invalid
  */
-native SteamIDToolsBackendStatus SteamIDTools_GetBackendStatus(SteamIDToolsProvider provider);
+stock int SteamID2ToAccountID(const char[] szSteamId2)
+{
+	if (!IsValidSteamID2(szSteamId2))
+	{
+		return 0;
+	}
+
+	char szParts[3][32];
+	if (ExplodeString(szSteamId2, ":", szParts, sizeof(szParts), sizeof(szParts[])) != 3)
+	{
+		return 0;
+	}
+
+	int iY;
+	int iZ;
+	if (!SteamIDTools_TryParseUInt32(szParts[1], iY)
+		|| (iY != 0 && iY != 1)
+		|| !SteamIDTools_TryParseUInt32(szParts[2], iZ)
+		|| !SteamIDTools_IsSteamID2ZInRange(szParts[2]))
+		return 0;
+
+	int iHigh = iZ >> 15;
+	int iLow = (iZ & 0x7fff) << 1;
+	iLow |= iY;
+	return (iHigh << 16) | iLow;
+}
 
 /**
- * Returns true when the provider extension is loaded and the backend is healthy.
+ * Validates that the decimal SteamID2 Z component fits in 31 unsigned bits.
  *
- * @param provider      Provider enum value
- * @return              true when the provider is ready for online requests
+ * @param szValue       Decimal component, with optional leading zeroes.
+ * @return              True for values 0..2147483647, false otherwise.
  */
-native bool SteamIDTools_IsProviderReady(SteamIDToolsProvider provider);
+stock bool SteamIDTools_IsSteamID2ZInRange(const char[] szValue)
+{
+	int iValue;
+	return SteamIDTools_TryParseUInt32(szValue, iValue) && iValue >= 0;
+}
 
 /**
- * Triggers an async backend health check for one provider.
+ * Parses decimal digits in the range 0..4294967295 without int64 arithmetic.
  *
- * @param provider      Provider enum value
- * @return              true when the health probe was queued
+ * Leading zeroes are accepted within ACCOUNTID_LENGTH. The result retains the
+ * uint32 bit pattern in a signed SourcePawn cell; negative cells can be valid.
+ *
+ * @param szValue       Decimal input, without signs or whitespace.
+ * @param iValue        Receives the uint32 bit pattern, or zero on failure.
+ * @return              True on success, false for invalid input or overflow.
  */
-native bool SteamIDTools_RequestHealthCheck(SteamIDToolsProvider provider);
+stock bool SteamIDTools_TryParseUInt32(const char[] szValue, int &iValue)
+{
+	iValue = 0;
+	int iLength = strlen(szValue);
+	if (iLength <= 0 || iLength > ACCOUNTID_LENGTH)
+		return false;
+
+	int iFirstDigit = 0;
+	while (iFirstDigit < iLength && szValue[iFirstDigit] == '0')
+		iFirstDigit++;
+	if (iFirstDigit == iLength)
+		return true;
+
+	int iSignificantLength = iLength - iFirstDigit;
+	if (iSignificantLength > 10)
+		return false;
+	if (iSignificantLength == 10)
+	{
+		for (int i = 0; i < 10; i++)
+		{
+			char cDigit = szValue[iFirstDigit + i];
+			if (cDigit < '0' || cDigit > '9')
+				return false;
+			if (cDigit != ACCOUNTID_UINT32_MAX_STRING[i])
+			{
+				if (cDigit > ACCOUNTID_UINT32_MAX_STRING[i])
+					return false;
+				break;
+			}
+		}
+	}
+
+	int iHigh = 0;
+	int iLow = 0;
+	for (int i = iFirstDigit; i < iLength; i++)
+	{
+		if (szValue[i] < '0' || szValue[i] > '9')
+			return false;
+
+		int iExpandedLow = (iLow * 10) + (szValue[i] - '0');
+		iHigh = (iHigh * 10) + (iExpandedLow / 65536);
+		iLow = iExpandedLow % 65536;
+	}
+
+	iValue = (iHigh << 16) | iLow;
+	return true;
+}
 
 /**
- * Returns the last cached backend health message for one provider.
+ * Parses a nonzero uint32 Steam AccountID.
  *
- * @param provider      Provider enum value
- * @param szBuffer      Output buffer
- * @param iMaxLen       Output buffer length
- * @return              true on success, false when the provider is invalid
+ * @param szValue       Decimal AccountID string.
+ * @param iAccountId    Receives the AccountID bit pattern, or zero on failure.
+ * @return              True for values 1..4294967295, false otherwise.
  */
-native bool SteamIDTools_GetBackendStatusMessage(SteamIDToolsProvider provider, char[] szBuffer, int iMaxLen);
+stock bool SteamIDTools_TryParseAccountID(const char[] szValue, int &iAccountId)
+{
+	if (!SteamIDTools_TryParseUInt32(szValue, iAccountId))
+		return false;
+	return iAccountId != 0;
+}
 
 /**
- * Gets the configured SteamIDTools backend base URL from the API plugin.
+ * Formats a nonzero AccountID as unsigned decimal without int64 arithmetic.
  *
- * @param szBuffer      Output buffer
- * @param iMaxLen       Output buffer length
- * @return              true on success, false otherwise
+ * @param iAccountId    AccountID bit pattern; a negative cell can be valid.
+ * @param szBuffer      Destination buffer, unchanged on failure.
+ * @param iMaxLength    Buffer capacity in bytes, including the null terminator.
+ * @return              True on success, false for zero or insufficient capacity.
  */
-native bool SteamIDTools_GetApiBaseUrl(char[] szBuffer, int iMaxLen);
+stock bool SteamIDTools_FormatAccountID(int iAccountId, char[] szBuffer, int iMaxLength)
+{
+	if (iAccountId == 0 || iMaxLength <= 1)
+		return false;
+
+	int iHigh = (iAccountId >> 16) & 0xffff;
+	int iLow = iAccountId & 0xffff;
+	char szReversed[ACCOUNTID_LENGTH + 1];
+	int iLength = 0;
+	while (iHigh != 0 || iLow != 0)
+	{
+		if (iLength >= sizeof(szReversed) - 1)
+			return false;
+
+		int iRemainder = iHigh % 10;
+		iHigh /= 10;
+		int iCombined = (iRemainder * 65536) + iLow;
+		iLow = iCombined / 10;
+		szReversed[iLength++] = view_as<char>('0' + (iCombined % 10));
+	}
+
+	if (iLength + 1 > iMaxLength)
+		return false;
+	for (int i = 0; i < iLength; i++)
+		szBuffer[i] = szReversed[iLength - i - 1];
+	szBuffer[iLength] = '\0';
+	return true;
+}
 
 /**
- * Queues a single online backend request.
+ * Adds two nonempty unsigned decimal strings without int64 arithmetic.
  *
- * `SteamIDToolsProvider_Auto` means "auto". The API plugin selects the
- * best available provider, preferring a backend-ready transport and falling
- * back to any loaded provider when health has not been established yet.
+ * The result can contain at most 63 digits. Leading zeroes are preserved.
  *
- * @param provider      Provider to use (`SteamWorks`, `system2`, or `Unknown` for auto)
- * @param szEndpoint    API endpoint, usually one of the `API_*` constants
- * @param szSteamId     Input value sent as `steamid=...`
- * @param szTag         Opaque caller tag returned in the completion forward
- * @return              Request id greater than zero if queued, otherwise zero
+ * @param szBaseValue   First decimal operand.
+ * @param szAddValue    Second decimal operand.
+ * @param szResult      Destination buffer, unchanged on failure.
+ * @param iMaxLength    Buffer capacity in bytes, including the null terminator.
+ * @return              True on success, false for invalid input or capacity.
  */
-native int SteamIDTools_RequestConversion(SteamIDToolsProvider provider, const char[] szEndpoint, const char[] szSteamId, const char[] szTag = "");
+stock bool SteamIDTools_AddDecimalStrings(const char[] szBaseValue, const char[] szAddValue, char[] szResult, int iMaxLength)
+{
+	if (iMaxLength <= 1)
+		return false;
+	if (szBaseValue[0] == '\0' || szAddValue[0] == '\0')
+		return false;
+	for (int i = 0; szBaseValue[i] != '\0'; i++)
+	{
+		if (szBaseValue[i] < '0' || szBaseValue[i] > '9')
+			return false;
+	}
+	for (int i = 0; szAddValue[i] != '\0'; i++)
+	{
+		if (szAddValue[i] < '0' || szAddValue[i] > '9')
+			return false;
+	}
+
+	int iBasePos = strlen(szBaseValue) - 1;
+	int iAddPos = strlen(szAddValue) - 1;
+	int iCarry = 0;
+	int iReversedLength = 0;
+	char szReversed[64];
+
+	while (iBasePos >= 0 || iAddPos >= 0 || iCarry != 0)
+	{
+		if (iReversedLength >= 64 - 1)
+			return false;
+
+		int iDigit = iCarry;
+		if (iBasePos >= 0)
+			iDigit += szBaseValue[iBasePos--] - '0';
+		if (iAddPos >= 0)
+			iDigit += szAddValue[iAddPos--] - '0';
+
+		szReversed[iReversedLength++] = view_as<char>('0' + (iDigit % 10));
+		iCarry = iDigit / 10;
+	}
+
+	if (iReversedLength + 1 > iMaxLength)
+		return false;
+
+	for (int i = 0; i < iReversedLength; i++)
+	{
+		szResult[i] = szReversed[iReversedLength - i - 1];
+	}
+
+	szResult[iReversedLength] = '\0';
+	return true;
+}
 
 /**
- * Queues a batch online backend request.
+ * Converts a public individual SteamID64 to a nonzero uint32 AccountID.
  *
- * `SteamIDToolsProvider_Auto` means "auto". The API plugin selects the
- * best available provider, preferring a backend-ready transport and falling
- * back to any loaded provider when health has not been established yet.
+ * The subtraction uses decimal strings. Values above 2147483647 retain their
+ * unsigned bit pattern in a negative SourcePawn cell; compare failures to zero.
  *
- * @param provider      Provider to use (`SteamWorks`, `system2`, or `Unknown` for auto)
- * @param szEndpoint    API endpoint, usually one of the `API_*` constants
- * @param szBatch       Comma-separated batch sent as `steamid=...`
- * @param szTag         Opaque caller tag returned in the completion forward
- * @return              Request id greater than zero if queued, otherwise zero
+ * @param szSteamId64   Decimal SteamID64 string.
+ * @param iAccountId    Receives the AccountID bit pattern, or zero on failure.
+ * @return              True on success, false for invalid SteamID64 input.
  */
-native int SteamIDTools_RequestBatch(SteamIDToolsProvider provider, const char[] szEndpoint, const char[] szBatch, const char[] szTag = "");
+stock bool SteamIDTools_SteamID64ToAccountID(const char[] szSteamId64, int &iAccountId)
+{
+	iAccountId = 0;
+	if (!IsValidSteamID64(szSteamId64))
+		return false;
+
+	char szReversed[STEAMID64_EXACT_LENGTH + 1];
+	int iSourcePosition = strlen(szSteamId64) - 1;
+	int iBasePosition = strlen(STEAMID64_BASE_STRING) - 1;
+	int iBorrow = 0;
+	int iLength = 0;
+	while (iSourcePosition >= 0)
+	{
+		if (iLength >= sizeof(szReversed) - 1)
+			return false;
+
+		int iDigit = (szSteamId64[iSourcePosition--] - '0') - iBorrow;
+		if (iBasePosition >= 0)
+			iDigit -= STEAMID64_BASE_STRING[iBasePosition--] - '0';
+		if (iDigit < 0)
+		{
+			iDigit += 10;
+			iBorrow = 1;
+		}
+		else
+		{
+			iBorrow = 0;
+		}
+		szReversed[iLength++] = view_as<char>('0' + iDigit);
+	}
+	if (iBasePosition >= 0 || iBorrow != 0)
+		return false;
+
+	while (iLength > 1 && szReversed[iLength - 1] == '0')
+		iLength--;
+
+	char szAccountId[ACCOUNTID_LENGTH + 1];
+	for (int i = 0; i < iLength; i++)
+		szAccountId[i] = szReversed[iLength - i - 1];
+	szAccountId[iLength] = '\0';
+	return SteamIDTools_TryParseAccountID(szAccountId, iAccountId);
+}
 
 /**
- * Fired when an online backend request finishes.
+ * Converts AccountID to SteamID2
  *
- * @param iRequestId    Request id returned by the native that queued it
- * @param provider      Provider that executed the request
- * @param bSuccess      true on success, false on failure
- * @param bBatch        true for batch requests
- * @param szEndpoint    Endpoint used for the request
- * @param szInput       Original input sent to the backend
- * @param szResult      Response body on success, error text on failure
- * @param szTag         Opaque caller tag passed to the request native
+ * @param iAccountId    Nonzero uint32 AccountID bit pattern; may be negative.
+ * @param szBuffer      Buffer to store the result
+ * @param iMaxlen       Maximum buffer length
+ * @return              true on success, false on failure
  */
-forward void SteamIDTools_OnRequestFinished(int iRequestId, SteamIDToolsProvider provider, bool bSuccess, bool bBatch, const char[] szEndpoint, const char[] szInput, const char[] szResult, const char[] szTag);
+stock bool AccountIDToSteamID2(int iAccountId, char[] szBuffer, int iMaxlen)
+{
+	if (iAccountId == 0 || iMaxlen <= 0)
+	{
+		return false;
+	}
+
+	int iY = iAccountId & 1;
+	int iHigh = (iAccountId >> 16) & 0xffff;
+	int iLow = iAccountId & 0xffff;
+	int iZ = (iHigh >> 1) << 16;
+	iZ |= (iLow >> 1) | ((iHigh & 1) << 15);
+
+	char szResult[32];
+	Format(szResult, sizeof(szResult), "STEAM_%d:%d:%d", STEAMIDTOOLS_SID2_UNIVERSE, iY, iZ);
+	if (strlen(szResult) >= iMaxlen)
+		return false;
+	strcopy(szBuffer, iMaxlen, szResult);
+	return true;
+}
 
 /**
- * Fired whenever the cached backend status changes for one provider.
+ * Adds a nonnegative signed integer to an unsigned decimal string.
  *
- * @param provider      Provider that changed
- * @param status        New cached backend status
- * @param szMessage     Latest status text or error message
+ * @param szBaseValue   Base decimal value string
+ * @param iAddValue     Signed value in the range 0..2147483647.
+ * @param szResult      Output buffer
+ * @param iMaxLength    Output buffer length
+ * @return              true on success, false on failure
  */
-forward void SteamIDTools_OnBackendStatusChanged(SteamIDToolsProvider provider, SteamIDToolsBackendStatus status, const char[] szMessage);
+stock bool SteamIDTools_AddDecimalStringInt(const char[] szBaseValue, int iAddValue, char[] szResult, int iMaxLength)
+{
+	if (iAddValue < 0)
+		return false;
+
+	char szAddValue[16];
+	IntToString(iAddValue, szAddValue, sizeof(szAddValue));
+	return SteamIDTools_AddDecimalStrings(szBaseValue, szAddValue, szResult, iMaxLength);
+}
+
+/**
+ * Converts AccountID to SteamID64.
+ *
+ * @param iAccountId    Nonzero uint32 AccountID bit pattern; may be negative.
+ * @param szBuffer      Buffer to store the result
+ * @param iMaxlen       Maximum buffer length
+ * @return              true on success, false on failure
+ */
+stock bool SteamIDTools_AccountIDToSteamID64(int iAccountId, char[] szBuffer, int iMaxlen)
+{
+	if (iAccountId == 0)
+		return false;
+
+	char szAccountId[ACCOUNTID_LENGTH + 1];
+	if (!SteamIDTools_FormatAccountID(iAccountId, szAccountId, sizeof(szAccountId)))
+		return false;
+	return SteamIDTools_AddDecimalStrings(STEAMID64_BASE_STRING, szAccountId, szBuffer, iMaxlen);
+}
+
+/**
+ * Validates if a SteamID64 is valid
+ *
+ * @param szSteamId64   SteamID64 string to validate
+ * @return              true if valid, false otherwise
+ */
+stock bool IsValidSteamID64(const char[] szSteamId64)
+{
+	if (strlen(szSteamId64) < 17 || strlen(szSteamId64) > 17)
+	{
+		return false;
+	}
+
+	for (int i = 0; szSteamId64[i] != '\0'; i++)
+	{
+		if (!IsCharNumeric(szSteamId64[i]))
+		{
+			return false;
+		}
+	}
+
+	if (strcmp(szSteamId64, STEAMID64_MIN_INDIVIDUAL_STRING, false) < 0)
+	{
+		return false;
+	}
+
+	if (strcmp(szSteamId64, STEAMID64_MAX_INDIVIDUAL_STRING, false) > 0)
+	{
+		return false;
+	}
+
+	return true;
+}
+
+/**
+ * Validates if a SteamID3 is valid
+ * Format: [U:1:XXXXXXXX]
+ *
+ * @param szSteamId3    SteamID3 string to validate
+ * @return              true if valid, false otherwise
+ */
+stock bool IsValidSteamID3(const char[] szSteamId3)
+{
+	int iLength = strlen(szSteamId3);
+	if (iLength < STEAMID3_MIN_LENGTH || iLength > ACCOUNTID_LENGTH + 6)
+	{
+		return false;
+	}
+
+	if (StrContains(szSteamId3, "[U:1:", false) != 0)
+	{
+		return false;
+	}
+
+	if (szSteamId3[iLength - 1] != ']')
+	{
+		return false;
+	}
+
+	char szAccountId[ACCOUNTID_LENGTH + 1];
+	int iAccountLength = iLength - 6;
+	for (int i = 0; i < iAccountLength; i++)
+		szAccountId[i] = szSteamId3[i + 5];
+	szAccountId[iAccountLength] = '\0';
+	int iAccountId;
+	return SteamIDTools_TryParseAccountID(szAccountId, iAccountId);
+}
+
+/**
+ * Converts SteamID3 to AccountID
+ * Format: [U:1:XXXXXXXX] -> XXXXXXXX
+ *
+ * @param szSteamId3    SteamID3 string
+ * @return              AccountID, or 0 if invalid
+ */
+stock int SteamID3ToAccountID(const char[] szSteamId3)
+{
+	if (!IsValidSteamID3(szSteamId3))
+	{
+		return 0;
+	}
+
+	char szTemp[32];
+	strcopy(szTemp, sizeof(szTemp), szSteamId3[5]);
+
+	int iLen = strlen(szTemp);
+	if (iLen > 0 && szTemp[iLen - 1] == ']')
+	{
+		szTemp[iLen - 1] = '\0';
+	}
+
+	int iAccountId;
+	if (!SteamIDTools_TryParseAccountID(szTemp, iAccountId))
+		return 0;
+	return iAccountId;
+}
+
+/**
+ * Converts AccountID to SteamID3
+ *
+ * @param iAccountId    Nonzero uint32 AccountID bit pattern; may be negative.
+ * @param szBuffer      Buffer to store the result
+ * @param iMaxlen       Maximum buffer length
+ * @return              true on success, false on failure
+ */
+stock bool AccountIDToSteamID3(int iAccountId, char[] szBuffer, int iMaxlen)
+{
+	if (iAccountId == 0 || iMaxlen <= 0)
+	{
+		return false;
+	}
+
+	char szResult[32];
+	Format(szResult, sizeof(szResult), "[U:1:%u]", iAccountId);
+	if (strlen(szResult) >= iMaxlen)
+		return false;
+	strcopy(szBuffer, iMaxlen, szResult);
+	return true;
+}
+
+/**
+ * Builds a Steam community profile URL using a SteamID3 path.
+ *
+ * @param iAccountId    AccountID to convert
+ * @param szBuffer      Buffer to store the result
+ * @param iMaxlen       Maximum buffer length
+ * @return              true on success, false on failure
+ */
+stock bool AccountIDToProfileURL_SID3(int iAccountId, char[] szBuffer, int iMaxlen)
+{
+	char szSteamId3[32];
+	if (!AccountIDToSteamID3(iAccountId, szSteamId3, sizeof(szSteamId3)))
+	{
+		return false;
+	}
+
+	Format(szBuffer, iMaxlen, "%s%s", URL_SID, szSteamId3);
+	return true;
+}
+
+/**
+ * Builds a Steam community profile URL using a SteamID64 path.
+ *
+ * @param szSteamId64   SteamID64 string
+ * @param szBuffer      Buffer to store the result
+ * @param iMaxlen       Maximum buffer length
+ * @return              true on success, false on failure
+ */
+stock bool SteamID64ToProfileURL(const char[] szSteamId64, char[] szBuffer, int iMaxlen)
+{
+	if (!IsValidSteamID64(szSteamId64))
+	{
+		return false;
+	}
+
+	Format(szBuffer, iMaxlen, "%s%s", URL_SID, szSteamId64);
+	return true;
+}
+
+/**
+ * Converts SteamID2 to SteamID3
+ *
+ * @param szSteamId2    SteamID2 string
+ * @param szBuffer      Buffer to store the result
+ * @param iMaxlen       Maximum buffer length
+ * @return              true on success, false on failure
+ */
+stock bool SteamID2ToSteamID3(const char[] szSteamId2, char[] szBuffer, int iMaxlen)
+{
+	int iAccountId = SteamID2ToAccountID(szSteamId2);
+	if (iAccountId == 0)
+	{
+		return false;
+	}
+
+	return AccountIDToSteamID3(iAccountId, szBuffer, iMaxlen);
+}
+
+/**
+ * Converts SteamID3 to SteamID2
+ *
+ * @param szSteamId3    SteamID3 string
+ * @param szBuffer      Buffer to store the result
+ * @param iMaxlen       Maximum buffer length
+ * @return              true on success, false on failure
+ */
+stock bool SteamID3ToSteamID2(const char[] szSteamId3, char[] szBuffer, int iMaxlen)
+{
+	int iAccountId = SteamID3ToAccountID(szSteamId3);
+	if (iAccountId == 0)
+	{
+		return false;
+	}
+
+	return AccountIDToSteamID2(iAccountId, szBuffer, iMaxlen);
+}
+
+/**
+ * Checks if a SteamID is a special case (BOT, PENDING, LAN)
+ *
+ * @param szSteamId     SteamID string to check
+ * @return              true if it's a special case, false otherwise
+ */
+stock bool IsSteamIDSpecialCase(const char[] szSteamId)
+{
+	return (StrEqual(szSteamId, "BOT", false) || StrEqual(szSteamId, "STEAM_ID_PENDING", false) || StrEqual(szSteamId, "STEAM_ID_LAN", false));
+}
+
+/**
+ * Automatically detects the format of a SteamID
+ *
+ * @param szSteamId     SteamID string to analyze
+ * @return              SteamIDFormat enum value
+ */
+stock SteamIDFormat DetectSteamIDFormat(const char[] szSteamId)
+{
+	if (strlen(szSteamId) == 0)
+	{
+		return STEAMID_FORMAT_UNKNOWN;
+	}
+
+	if (IsSteamIDSpecialCase(szSteamId))
+	{
+		return STEAMID_FORMAT_SPECIAL;
+	}
+
+	if (StrContains(szSteamId, "STEAM_", false) == 0 && IsValidSteamID2(szSteamId))
+	{
+		return STEAMID_FORMAT_STEAMID2;
+	}
+
+	if (StrContains(szSteamId, "[U:1:", false) == 0 && IsValidSteamID3(szSteamId))
+	{
+		return STEAMID_FORMAT_STEAMID3;
+	}
+
+	if (strlen(szSteamId) == STEAMID64_EXACT_LENGTH && IsValidSteamID64(szSteamId))
+	{
+		return STEAMID_FORMAT_STEAMID64;
+	}
+
+	if (strlen(szSteamId) <= ACCOUNTID_LENGTH)
+	{
+		bool bIsNumeric = true;
+		for (int i = 0; szSteamId[i] != '\0'; i++)
+		{
+			if (!IsCharNumeric(szSteamId[i]))
+			{
+				bIsNumeric = false;
+				break;
+			}
+		}
+
+		if (bIsNumeric)
+		{
+			int iAccountId;
+			if (SteamIDTools_TryParseAccountID(szSteamId, iAccountId))
+			{
+				return STEAMID_FORMAT_ACCOUNTID;
+			}
+		}
+	}
+
+	return STEAMID_FORMAT_UNKNOWN;
+}

@@ -36,8 +36,8 @@ En este repo:
 `l4d2_familyshare_stock.inc` reúne las utilidades de identidad y el logger compartido. Cada
 plugin declara e inicializa su propio `g_Log`, con ConVars y archivo independientes.
 
-`steamidtools_stock.inc` se distribuye porque los helpers compartidos reutilizan
-su conversión decimal. Este include no exige cargar el plugin SteamIDTools. Las
+`steamidtools.inc` y el directorio `steamidtools/` se distribuyen como toolkit
+4.0.0; los helpers compartidos reutilizan la conversion pura del principal. Este include no exige cargar el plugin SteamIDTools. Las
 demás bibliotecas complementarias de compilación quedan fuera del bundle final.
 
 ## CI
@@ -53,3 +53,18 @@ El workflow principal separa:
 ## WSL
 
 Si el repo se compila desde WSL sobre `/mnt/...`, el builder puede usar un workspace temporal Linux para evitar el costo de I/O sobre el filesystem montado de Windows.
+
+## Regresion de identidad offline
+
+`make test-offline` ejecuta la admision y el frame productivos de perfiles con
+servicios SourceMod modelados y ASan/UBSan. Verifica la identidad uint32 local,
+que summaries se inicie en el frame posterior y que se rechacen requests tras
+iniciar la descarga. No opera SRCDS ni consulta Steam.
+
+## Validación de includes anidados
+
+El validador acepta los archivos individuales y los directorios declarados en
+`plugin-package-map.json`, incluidos `steamidtools/clients.inc` y
+`steamidtools/commands.inc`. Cada archivo del directorio fuente debe estar en el
+paquete; cualquier biblioteca adicional fuera de esas rutas declaradas se rechaza.
+Las pruebas de empaquetado se ejecutan antes de publicar canales y releases.

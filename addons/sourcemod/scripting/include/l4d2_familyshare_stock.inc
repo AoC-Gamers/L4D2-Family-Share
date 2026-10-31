@@ -16,7 +16,7 @@
 #define _l4d2_familyshare_stock_included_
 
 #include <sourcemod>
-#include <steamidtools_stock>
+#include <steamidtools>
 
 /**
  * Parses the canonical decimal AccountID used by the external allowlist.
