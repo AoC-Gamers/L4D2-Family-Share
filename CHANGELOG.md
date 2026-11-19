@@ -6,6 +6,7 @@ Todos los cambios relevantes de este proyecto se documentarán en este archivo.
 
 ### Added
 
+- El código propio de lechuga se ofrece bajo GPL-3.0-only. El ZIP incluye el texto de la licencia y los avisos de terceros.
 - Core y manager 2.0.0 con APIs separadas; resolución de perfiles asíncrona por AccountID.
 - Excepciones persistentes exclusivas por AccountID del borrower y comandos administrativos.
 - Identidad del owner por AccountID y decisión `allowed` en el historial, con migración explícita del esquema 1.4.
@@ -22,6 +23,10 @@ Todos los cambios relevantes de este proyecto se documentarán en este archivo.
 - Expulsiones diferidas protegidas por serial y AccountID ante desconexión o reutilización de slots.
 - Solicitudes de perfiles con timeout y fallback, callbacks SQL protegidos por generación y pendientes conservados hasta confirmación.
 - Argumentos de traducción sincronizados en inglés y español.
+
+### Desarrollo
+
+- El ZIP instalable se valida mediante Make y excluye los diagnósticos y los manifiestos del build.
 
 ## [1.4.0]
 

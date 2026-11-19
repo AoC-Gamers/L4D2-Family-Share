@@ -78,7 +78,7 @@ borrower y owner por AccountID, SteamID64, nombres, excepción e intención de
 expulsión. `created_at` corresponde a la inserción en la base de datos.
 
 MySQL requiere el esquema de `configs/sql-init/mysql/`. Una instalación 1.4
-requiere la [migración](MIGRATION.md); SQLite crea automáticamente una tabla nueva.
+requiere la [migración](../migration/README.md); SQLite crea automáticamente una tabla nueva.
 No se modifica automáticamente un esquema existente.
 
 La conexión hace hasta dos intentos, separados por 30 segundos. Cambiar
@@ -95,4 +95,4 @@ abrupto entre el commit SQL y la confirmación local puede duplicar una fila.
 La biblioteca de manager publica únicamente `L4D2FamilyShareManager_IsAccountAllowed`
 y `L4D2FamilyShareManager_IsClientEnforced`, documentados en su include. La detección
 y los perfiles se consumen desde la API del core. La API combinada anterior se
-retira; los consumidores deben seguir la [guía de migración](MIGRATION.md).
+retira; los consumidores deben seguir la [guía de migración](../migration/README.md).
