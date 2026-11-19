@@ -6,34 +6,29 @@ end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
 
-[*.{sp,inc}]
+[*.{sp,inc,cfg,res,kv,vmt,c,cpp,h,hpp}]
 indent_style = tab
 indent_size = 4
 tab_width = 4
 
-[Makefile]
+[{Makefile,*.mk}]
 indent_style = tab
 indent_size = 4
 tab_width = 4
 
-[*.{json,yml,yaml,md,txt,py,sh,xml,html,css,js,ts}]
+[*.{json,yml,yaml,md,txt,sh,xml,html,css,js,ts}]
 indent_style = space
 indent_size = 2
 
-[*.{cfg,res,kv,vmt}]
+[*.py]
+indent_style = space
+indent_size = 4
+
+[*.{bat,cmd}]
+end_of_line = crlf
 indent_style = tab
 indent_size = 4
 tab_width = 4
-
-[*.bat]
-end_of_line = crlf
-indent_style = tab
-indent_size = 4
-
-[*.cmd]
-end_of_line = crlf
-indent_style = tab
-indent_size = 4
 
 [*.md]
 trim_trailing_whitespace = false

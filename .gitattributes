@@ -1,47 +1,36 @@
-* text=auto
+# Let Git distinguish text from binary data. Text uses LF unless overridden.
+* text=auto eol=lf
 
-*.sp text eol=lf
-*.inc text eol=lf
-*.cfg text eol=lf
-*.txt text eol=lf
-*.json text eol=lf
-*.md text eol=lf
-*.yml text eol=lf
-*.yaml text eol=lf
-*.sh text eol=lf
-*.py text eol=lf
-*.ps1 text eol=lf
+# Windows command scripts
 *.bat text eol=crlf
 *.cmd text eol=crlf
-*.mk text eol=lf
-Makefile text eol=lf
-Dockerfile text eol=lf
-*.env text eol=lf
-*.sql text eol=lf
-*.xml text eol=lf
-*.html text eol=lf
-*.css text eol=lf
-*.js text eol=lf
-*.ts text eol=lf
 
-*.smx binary
-*.so binary
-*.dll binary
-*.exe binary
-*.zip binary
-*.7z binary
-*.tar binary
-*.gz binary
-*.tgz binary
-*.png binary
-*.jpg binary
-*.jpeg binary
-*.gif binary
-*.ico binary
-*.pdf binary
-*.wav binary
-*.mp3 binary
-*.vtf binary
-*.vmt text eol=lf
-*.res text eol=lf
-*.kv text eol=lf
+# Compiled code and archives
+*.smx binary -eol
+*.so binary -eol
+*.dll binary -eol
+*.exe binary -eol
+*.a binary -eol
+*.lib binary -eol
+*.zip binary -eol
+*.7z binary -eol
+*.tar binary -eol
+*.gz binary -eol
+*.tgz binary -eol
+*.bz2 binary -eol
+
+# Images, audio and Source engine assets
+*.png binary -eol
+*.jpg binary -eol
+*.jpeg binary -eol
+*.gif binary -eol
+*.ico binary -eol
+*.pdf binary -eol
+*.wav binary -eol
+*.mp3 binary -eol
+*.vtf binary -eol
+*.mdl binary -eol
+*.vtx binary -eol
+*.vvd binary -eol
+*.phy binary -eol
+*.bsp binary -eol

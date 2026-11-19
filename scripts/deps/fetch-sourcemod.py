@@ -50,15 +50,16 @@ def main() -> int:
     parser.add_argument("--root", default=".")
     parser.add_argument("--platform", choices=("windows", "linux"))
     parser.add_argument("--version", default="1.12")
+    parser.add_argument("--archive-url", default="")
     args = parser.parse_args()
 
     root = Path(args.root).resolve()
-    deps_dir = root / "deps"
+    deps_dir = root / ".deps" / "smx"
     platform = args.platform or detect_platform()
     archive_name = "sourcemod-windows.zip" if platform == "windows" else "sourcemod-linux.tar.gz"
     extract_dir = deps_dir / f"sourcemod-{platform}"
     archive_path = deps_dir / archive_name
-    download(build_url(platform, args.version), archive_path)
+    download(args.archive_url or build_url(platform, args.version), archive_path)
     extract_archive(archive_path, extract_dir, platform)
     print(f"SourceMod {platform} extracted to: {extract_dir}")
     return 0

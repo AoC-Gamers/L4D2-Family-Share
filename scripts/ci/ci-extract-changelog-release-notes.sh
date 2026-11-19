@@ -23,13 +23,19 @@ awk -v version="$VERSION" '
 		in_section = 0
 		found = 0
 	}
-	$0 ~ "^##[[:space:]]+" version "([[:space:]]+-.*)?$" {
-		in_section = 1
-		found = 1
+	/^##[[:space:]]+/ {
+		if (in_section) {
+			exit
+		}
+		heading = $0
+		sub(/^##[[:space:]]+/, "", heading)
+		sub(/[[:space:]]+-.*$/, "", heading)
+		sub(/[[:space:]]+$/, "", heading)
+		if (heading == version || heading == "[" version "]") {
+			in_section = 1
+			found = 1
+		}
 		next
-	}
-	$0 ~ "^##[[:space:]]+" && in_section {
-		exit
 	}
 	in_section {
 		print
