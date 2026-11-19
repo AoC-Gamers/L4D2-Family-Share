@@ -115,7 +115,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  release:
+  package:
     runs-on: ubuntu-latest
     needs: build-smx
     outputs:
@@ -183,7 +183,7 @@ jobs:
 
   publish-channel:
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
-    needs: release
+    needs: package
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -195,7 +195,7 @@ jobs:
       - name: Download validated ZIP
         uses: actions/download-artifact@v8
         with:
-          name: ${{ needs.release.outputs.basename }}
+          name: ${{ needs.package.outputs.basename }}
           path: dist/release
 
       - name: Move channel tag
@@ -204,8 +204,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f "${{ needs.release.outputs.tag }}" "$GITHUB_SHA"
-          git push origin "refs/tags/${{ needs.release.outputs.tag }}" --force
+          git tag -f "${{ needs.package.outputs.tag }}" "$GITHUB_SHA"
+          git push origin "refs/tags/${{ needs.package.outputs.tag }}" --force
 
       - name: Publish channel release
         if: github.event_name != 'pull_request' && (github.ref_name == 'main' || github.ref_name == 'develop')
@@ -213,18 +213,18 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          tag="${{ needs.release.outputs.tag }}"
-          title="${{ needs.release.outputs.release_name }}"
-          asset="dist/release/${{ needs.release.outputs.basename }}.zip"
+          tag="${{ needs.package.outputs.tag }}"
+          title="${{ needs.package.outputs.release_name }}"
+          asset="dist/release/${{ needs.package.outputs.basename }}.zip"
 
           if gh release view "$tag" >/dev/null 2>&1; then
-            if [[ "${{ needs.release.outputs.prerelease }}" == "true" ]]; then
+            if [[ "${{ needs.package.outputs.prerelease }}" == "true" ]]; then
               gh release edit "$tag" --title "$title" --prerelease --latest=false
             else
               gh release edit "$tag" --title "$title" --prerelease=false --latest
             fi
           else
-            if [[ "${{ needs.release.outputs.prerelease }}" == "true" ]]; then
+            if [[ "${{ needs.package.outputs.prerelease }}" == "true" ]]; then
               gh release create "$tag" --title "$title" --prerelease --latest=false --target "$GITHUB_SHA"
             else
               gh release create "$tag" --title "$title" --latest --target "$GITHUB_SHA"
